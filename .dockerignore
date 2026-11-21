@@ -1,0 +1,17 @@
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/coverage
+.git
+.env
+.env.*
+!.env.example
+.pnpm-store
+.agents
+.claude
+skills
+skills-lock.json
+artifacts
+apps/web
+**/*.log
+.DS_Store

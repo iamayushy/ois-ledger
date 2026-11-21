@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
-    "build": "tsc --noEmit",
+    "start": "node --enable-source-maps dist/server.mjs",
+    "build": "tsc --noEmit && pnpm run bundle",
+    "bundle": "esbuild server=src/server.ts migrate=../../packages/db/src/migrate-cli.ts seed=../../packages/db/src/seed.ts --bundle --platform=node --format=esm --target=node24 --packages=external --alias:@ois/db=../../packages/db/src --alias:@ois/shared=../../packages/shared/src --outdir=dist --out-extension:.js=.mjs --sourcemap --legal-comments=none",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -30,6 +31,7 @@
   },
   "devDependencies": {
     "@types/pg": "^8.11.14",
+    "esbuild": "0.28.2",
     "tsx": "^4.19.4"
   }
 }
