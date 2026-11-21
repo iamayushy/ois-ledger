@@ -23,11 +23,14 @@
     "@fastify/under-pressure": "^9.0.3",
     "@ois/db": "workspace:*",
     "@ois/shared": "workspace:*",
+    "@sinclair/typebox": "^0.34.52",
     "close-with-grace": "^2.1.0",
+    "dotenv": "^16.6.1",
     "drizzle-orm": "^0.43.1",
     "fastify": "^5.3.2",
     "fastify-plugin": "^5.0.1",
-    "pg": "^8.15.6"
+    "pg": "^8.15.6",
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
     "@types/pg": "^8.11.14",

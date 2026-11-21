@@ -53,9 +53,15 @@ importers:
       '@ois/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@sinclair/typebox':
+        specifier: ^0.34.52
+        version: 0.34.52
       close-with-grace:
         specifier: ^2.1.0
         version: 2.5.0
+      dotenv:
+        specifier: ^16.6.1
+        version: 16.6.1
       drizzle-orm:
         specifier: ^0.43.1
         version: 0.43.1(@types/pg@8.23.1)(pg@8.23.1)
@@ -68,6 +74,9 @@ importers:
       pg:
         specifier: ^8.15.6
         version: 8.23.1
+      uuid:
+        specifier: ^11.1.1
+        version: 11.1.1
     devDependencies:
       '@types/pg':
         specifier: ^8.11.14

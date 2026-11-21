@@ -44,16 +44,16 @@ docker compose --profile app run --rm migrate node dist/seed.mjs
 
 The first command builds the image, runs migrations as a one-shot `migrate` service, and then starts `api` on :3001. Set `API_HOST_PORT=3012` if `pnpm dev` is already using port 3001. The second command seeds the database; it does nothing if products already exist. Plain `docker compose up -d` still starts Postgres only.
 
-`apps/api/Dockerfile` is a multi-stage build on `node:24-alpine`:
+The root `Dockerfile` builds the API in several stages on `node:24-alpine`. It uses only classic Docker builder features, so it also builds on Cloud Build's `gcr.io/cloud-builders/docker` without BuildKit:
 
 | Stage | Contents |
 |---|---|
-| `base` | Corepack activates the pnpm version pinned in `packageManager`. Only package manifests are copied, so the dependency layers are rebuilt only when a manifest or the lockfile changes. |
-| `build` | `pnpm install --frozen-lockfile --filter @ois/api...` with a BuildKit cache mount for the pnpm store, then `typecheck`, then the `bundle` script. esbuild compiles `@ois/shared` and `@ois/db` into `dist/server.mjs`, `dist/migrate.mjs` and `dist/seed.mjs`. npm packages stay external. |
-| `prod-deps` | `pnpm deploy --prod --legacy` with `node-linker=hoisted`: production dependencies only, in a flat `node_modules`. |
+| `base` | Corepack activates the pnpm version pinned in `packageManager`. Only package manifests are copied before `pnpm install --frozen-lockfile --filter @ois/api...`, so the install layer is rebuilt only when a manifest or the lockfile changes. |
+| `build` | `typecheck`, then the `bundle` script. esbuild compiles `@ois/shared` and `@ois/db` into `dist/server.mjs`, `dist/migrate.mjs` and `dist/seed.mjs`. npm packages stay external. |
+| `prod-deps` | A separate `pnpm install --prod --frozen-lockfile --offline --filter @ois/api`, reusing the pnpm store from `base`. Versions come exactly from the lockfile, and no web or dev packages are installed. The bundles import `@sinclair/typebox`, `uuid` and `dotenv` directly, so `@ois/api` declares them as its own dependencies. |
 | `runtime` | `node:24-alpine` plus `tini` as PID 1. Runs as the non-root `node` user, has no npm, Corepack, Yarn or pnpm, and has a `HEALTHCHECK` on `/api/health`. The bundles, `node_modules` and SQL migrations are copied in. |
 
-Build the image on its own with `docker build -f apps/api/Dockerfile -t ois-api .`, run from the repo root.
+Build the image on its own with `docker build -t ois-api .` from the repo root. The build context must be the repo root because the image needs the lockfile and the workspace packages. On Cloud Build or Cloud Run, set the Dockerfile location to `/Dockerfile`.
 
 ### Seed data
 

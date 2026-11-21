@@ -13,10 +13,9 @@ RUN corepack install
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 COPY apps/api/package.json apps/api/
+RUN pnpm install --frozen-lockfile --filter "@ois/api..."
 
 FROM base AS build
-RUN --mount=type=cache,id=ois-pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --filter "@ois/api..."
 COPY tsconfig.base.json ./
 COPY packages/shared/tsconfig.json packages/shared/
 COPY packages/shared/src packages/shared/src
@@ -29,8 +28,14 @@ RUN pnpm --filter "@ois/api..." run typecheck \
  && pnpm --filter @ois/api run bundle
 
 FROM base AS prod-deps
-RUN --mount=type=cache,id=ois-pnpm-store,target=/pnpm/store \
-    pnpm --filter @ois/api deploy --prod --legacy --config.node-linker=hoisted /out
+WORKDIR /out
+RUN cp /repo/package.json /repo/pnpm-lock.yaml /repo/pnpm-workspace.yaml ./ \
+ && mkdir -p packages/shared packages/db apps/api \
+ && cp /repo/packages/shared/package.json packages/shared/ \
+ && cp /repo/packages/db/package.json packages/db/ \
+ && cp /repo/apps/api/package.json apps/api/ \
+ && pnpm install --prod --frozen-lockfile --offline --ignore-scripts --filter @ois/api \
+ && rm -rf apps/api/node_modules/@ois packages
 
 FROM ${NODE_IMAGE} AS runtime
 RUN apk add --no-cache tini \
@@ -40,8 +45,9 @@ ENV NODE_ENV=production \
     API_HOST=0.0.0.0 \
     API_PORT=3001 \
     DOTENV_CONFIG_QUIET=true
-WORKDIR /app
-COPY --from=prod-deps --chown=node:node /out/node_modules ./node_modules
+WORKDIR /app/apps/api
+COPY --from=prod-deps --chown=node:node /out/node_modules /app/node_modules
+COPY --from=prod-deps --chown=node:node /out/apps/api/node_modules ./node_modules
 COPY --from=build --chown=node:node /repo/apps/api/dist ./dist
 COPY --from=build --chown=node:node /repo/packages/db/drizzle ./drizzle
 COPY --chown=node:node apps/api/package.json ./package.json
