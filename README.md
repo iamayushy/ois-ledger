@@ -62,7 +62,7 @@ Build the image on its own with `docker build -t ois-api .` from the repo root. 
 One-time setup:
 
 ```bash
-gcloud artifacts repositories create ois --repository-format=docker --location=asia-south2
+gcloud artifacts repositories create ois --repository-format=docker --location=asia-south1
 printf '%s' 'postgres://USER:PASSWORD@HOST:5432/ois' | gcloud secrets create ois_db_url --data-file=-
 ```
 
@@ -78,7 +78,7 @@ Create a Cloud Build trigger on `main` with **Configuration: Cloud Build configu
 
 | Substitution | Default | Purpose |
 |---|---|---|
-| `_REGION` | `asia-south2` (Delhi) | Region for Artifact Registry and Cloud Run |
+| `_REGION` | `asia-south1` (Mumbai) | Region for Artifact Registry and Cloud Run |
 | `_AR_REPO` / `_SERVICE` | `ois` / `ois-ledger` | Resource names |
 | `_DB_SECRET` | `ois_db_url` | Secret Manager secret holding `DATABASE_URL` |
 | `_CORS_ORIGIN` | `http://localhost:5173` | Set to the web app's URL (for example your `workers.dev` domain) |

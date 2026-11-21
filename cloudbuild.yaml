@@ -1,5 +1,5 @@
 substitutions:
-  _REGION: asia-south2
+  _REGION: asia-south1
   _AR_REPO: ois
   _SERVICE: ois-ledger
   _DB_SECRET: ois_db_url
