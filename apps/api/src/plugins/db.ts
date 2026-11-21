@@ -2,6 +2,8 @@ import fp from 'fastify-plugin';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { createDbClient, type DbClient, type OisDatabase } from '@ois/db/client';
+import { instrumentPool } from '@ois/db/instrumentation';
+import { requestPoolObserver } from '../observability/telemetry.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -38,6 +40,7 @@ export const dbPlugin = fp<DbPluginOptions>(
       throw new Error('Either dbClient or connectionString must be provided to dbPlugin');
     }
 
+    instrumentPool(activeClient.pool, requestPoolObserver);
     fastify.decorate('db', activeClient.db);
     fastify.decorate('pgPool', activeClient.pool);
 

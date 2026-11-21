@@ -19,6 +19,10 @@
     "./seed-data": {
       "types": "./src/seed-data.ts",
       "default": "./src/seed-data.ts"
+    },
+    "./instrumentation": {
+      "types": "./src/instrumentation.ts",
+      "default": "./src/instrumentation.ts"
     }
   },
   "scripts": {

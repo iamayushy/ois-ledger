@@ -38,7 +38,6 @@ export const proxyAuthPlugin = fp<ProxyAuthPluginOptions>(
       if (isTrustedProxy(readHeader(request))) {
         return;
       }
-      request.log.warn({ reqId: request.id }, 'Rejected request without valid proxy secret');
       await reply.code(401).send({
         error: {
           code: ERROR_CODE.UNAUTHORIZED_ORIGIN,

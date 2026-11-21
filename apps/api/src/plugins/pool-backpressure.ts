@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest, onRequestAsyncHookHandler } from 'fastify';
 import type { Pool } from 'pg';
 import { ERROR_CODE } from '@ois/shared/schemas';
+import { annotate } from '../observability/telemetry.js';
 
 export interface PoolBackpressureOptions {
   readonly pool: Pool;
@@ -16,10 +17,7 @@ export function createPoolBackpressureHook(
       return;
     }
 
-    request.log.warn(
-      { poolWaiting: waiting, poolMaxWaiting: options.maxWaiting, reqId: request.id },
-      'Shedding request: database pool wait queue is full',
-    );
+    annotate(request.telemetry, { pool_waiting: waiting, pool_max_waiting: options.maxWaiting });
     await reply
       .header('Retry-After', '1')
       .code(503)

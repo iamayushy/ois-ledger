@@ -1,6 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import {
-  ERROR_CODE,
   CancelOrderResponseSchema,
   CreateOrderBodySchema,
   CreateOrderHeadersSchema,
@@ -20,12 +19,8 @@ import {
   listOrders,
 } from '../services/order-service.js';
 import { isAppError } from '../errors.js';
+import { annotate } from '../observability/telemetry.js';
 
-const REJECTION_CODES: ReadonlySet<number> = new Set([
-  ERROR_CODE.UNKNOWN_SKU,
-  ERROR_CODE.INSUFFICIENT_STOCK,
-  ERROR_CODE.IDEMPOTENCY_CONFLICT,
-]);
 
 export const orderRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.post(
@@ -49,34 +44,28 @@ export const orderRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
     },
     async (request, reply) => {
       const idempotencyKeyHeader = request.headers['idempotency-key'];
+      annotate(request.telemetry, {
+        idempotency_key: idempotencyKeyHeader.trim(),
+        customer_id: request.body.customerId.trim(),
+        item_count: request.body.items.length,
+        skus: request.body.items.map((item) => item.sku.trim()),
+      });
       const result = await createOrder(fastify.db, idempotencyKeyHeader, request.body).catch(
         (error: unknown) => {
-          if (isAppError(error) && REJECTION_CODES.has(error.code)) {
-            request.log.info(
-              {
-                event: 'reservation.rejected',
-                idempotencyKey: idempotencyKeyHeader,
-                customerId: request.body.customerId,
-                errorCode: error.code,
-                skus: request.body.items.map((item) => item.sku),
-                shortages: error.details?.shortages,
-                missingSkus: error.details?.missingSkus,
-              },
-              'Reservation rejected',
-            );
+          if (isAppError(error)) {
+            annotate(request.telemetry, {
+              shortage_skus: error.details?.shortages?.map((shortage) => shortage.sku),
+              missing_skus: error.details?.missingSkus,
+            });
           }
           throw error;
         },
       );
 
-      request.log.info(
-        {
-          orderId: result.order.id,
-          idempotencyKey: result.order.idempotencyKey,
-          replayed: result.replayed,
-        },
-        result.replayed ? 'Order replayed from idempotency key' : 'Order reserved',
-      );
+      annotate(request.telemetry, {
+        order_id: result.order.id,
+        idempotency_replayed: result.replayed,
+      });
 
       reply.header('Idempotency-Replayed', result.replayed ? 'true' : 'false');
       reply.code(result.replayed ? 200 : 201);
@@ -164,15 +153,10 @@ export const orderRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
     async (request) => {
       const result = await cancelOrder(fastify.db, request.params.id);
 
-      request.log.info(
-        {
-          orderId: result.order.id,
-          alreadyCancelled: result.alreadyCancelled,
-        },
-        result.alreadyCancelled
-          ? 'Order cancellation idempotent replay'
-          : 'Order cancelled and inventory released',
-      );
+      annotate(request.telemetry, {
+        order_id: result.order.id,
+        already_cancelled: result.alreadyCancelled,
+      });
 
       return result;
     },

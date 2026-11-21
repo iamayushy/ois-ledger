@@ -4,7 +4,9 @@ import etag from '@fastify/etag';
 import helmet from '@fastify/helmet';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { generateUuidV7 } from '@ois/shared/uuidv7';
 import type { DbClient } from '@ois/db/client';
+import { canonicalLogPlugin, REQUEST_ID_HEADER } from './plugins/canonical-log.js';
 import { dbPlugin } from './plugins/db.js';
 import { errorHandlerPlugin } from './plugins/error-handler.js';
 import { createPoolBackpressureHook } from './plugins/pool-backpressure.js';
@@ -33,18 +35,57 @@ export interface BuildAppOptions {
   readonly enablePressure?: boolean;
   readonly proxySharedSecret?: string;
   readonly enableDocs?: boolean;
+  readonly buildId?: string;
+  readonly logStream?: LogStream;
+}
+
+export interface LogStream {
+  readonly write: (message: string) => void;
+}
+
+const SERVICE_NAME = 'ois-api';
+
+const SEVERITY_BY_LEVEL: Readonly<Record<string, string>> = {
+  trace: 'DEBUG',
+  debug: 'DEBUG',
+  info: 'INFO',
+  warn: 'WARNING',
+  error: 'ERROR',
+  fatal: 'CRITICAL',
+};
+
+const REDACTED_PATHS: readonly string[] = [
+  'req.headers.authorization',
+  'req.headers.cookie',
+  'req.headers["x-proxy-secret"]',
+  'headers.authorization',
+  'headers.cookie',
+  'headers["x-proxy-secret"]',
+];
+
+function buildLoggerOptions(options: BuildAppOptions) {
+  const buildId = options.buildId ?? process.env['K_REVISION'] ?? 'local';
+  return {
+    level: options.logLevel ?? 'info',
+    messageKey: 'message',
+    timestamp: () => `,"time":"${new Date().toISOString()}"`,
+    formatters: {
+      level: (label: string) => ({ severity: SEVERITY_BY_LEVEL[label] ?? 'DEFAULT', level: label }),
+      bindings: () => ({ service: SERVICE_NAME, build_id: buildId }),
+    },
+    redact: { paths: [...REDACTED_PATHS], censor: '[redacted]' },
+    ...(options.logStream !== undefined ? { stream: options.logStream } : {}),
+  };
 }
 
 const DEFAULT_POOL_MAX_WAITING = 100;
 
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
-    logger:
-      options.logLevel === 'silent'
-        ? false
-        : {
-            level: options.logLevel ?? 'info',
-          },
+    logger: options.logLevel === 'silent' ? false : buildLoggerOptions(options),
+    disableRequestLogging: true,
+    requestIdLogLabel: 'request_id',
+    genReqId: () => generateUuidV7(),
     ajv: {
       customOptions: {
         removeAdditional: false,
@@ -53,6 +94,8 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
       },
     },
   }).withTypeProvider<TypeBoxTypeProvider>();
+
+  await app.register(canonicalLogPlugin);
 
   app.addHook('onRequest', async (request) => {
     request.requestStartTimeNs = process.hrtime.bigint();
@@ -75,7 +118,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     origin: options.corsOrigin ?? true,
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Idempotency-Key'],
-    exposedHeaders: ['Idempotency-Replayed', 'X-Response-Time', 'Retry-After', 'ETag'],
+    exposedHeaders: ['Idempotency-Replayed', 'X-Response-Time', 'Retry-After', 'ETag', REQUEST_ID_HEADER],
   });
 
   await app.register(compress, { global: true });

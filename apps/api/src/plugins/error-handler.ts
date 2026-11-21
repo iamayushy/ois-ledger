@@ -3,6 +3,7 @@ import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from
 import { isPoolAcquireTimeout } from '@ois/db/client';
 import { ERROR_CODE } from '@ois/shared/schemas';
 import { isAppError, toErrorResponse } from '../errors.js';
+import { annotate } from '../observability/telemetry.js';
 
 const CONTENTION_PG_CODES = new Set(['40P01', '40001', '55P03', '57014']);
 const CONNECTIVITY_ERROR_CODES = new Set([
@@ -134,10 +135,7 @@ export const errorHandlerPlugin = fp(
 
       const dbFailure = classifyDbFailure(error);
       if (dbFailure && dbFailure.kind !== 'integrity') {
-        request.log.warn(
-          { dbErrorCode: dbFailure.code, kind: dbFailure.kind, reqId: request.id },
-          'Transient database failure',
-        );
+        annotate(request.telemetry, { db_error_code: dbFailure.code, db_failure_kind: dbFailure.kind });
         reply.header('Retry-After', '1').code(503).send({
           error: {
             code: ERROR_CODE.SERVICE_UNAVAILABLE,
@@ -148,10 +146,7 @@ export const errorHandlerPlugin = fp(
       }
 
       if (dbFailure) {
-        request.log.warn(
-          { dbErrorCode: dbFailure.code, reqId: request.id },
-          'Database integrity constraint violation',
-        );
+        annotate(request.telemetry, { db_error_code: dbFailure.code, db_failure_kind: dbFailure.kind });
         reply.code(409).send({
           error: {
             code: ERROR_CODE.DATA_INTEGRITY_CONFLICT,
@@ -161,7 +156,7 @@ export const errorHandlerPlugin = fp(
         return;
       }
 
-      request.log.error({ err: error, reqId: request.id }, 'Unhandled API error');
+      request.log.error({ err: error }, 'Unhandled API error');
       reply.code(500).send({
         error: {
           code: ERROR_CODE.INTERNAL_ERROR,
