@@ -7,7 +7,10 @@
   "workers_dev": false,
   "preview_urls": false,
   "vars": {
-    "API_ORIGIN": "https://oms-service.cloud.run"
+    "API_ORIGIN": "https://ois-ledger-vuq3vqgw6q-el.a.run.app"
+  },
+  "secrets": {
+    "required": ["PROXY_SHARED_SECRET"]
   },
   "observability": {
     "enabled": true

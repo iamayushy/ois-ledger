@@ -15,13 +15,16 @@ function toUpstreamUrl(requestUrl: string, apiOrigin: string): URL {
   return upstream;
 }
 
-function toUpstreamHeaders(request: Request): Headers {
+const PROXY_SECRET_HEADER = 'x-proxy-secret';
+
+function toUpstreamHeaders(request: Request, proxySecret: string): Headers {
   const headers = new Headers(request.headers);
   for (const name of STRIPPED_REQUEST_HEADERS) {
     headers.delete(name);
   }
   headers.set('x-forwarded-host', new URL(request.url).host);
   headers.set('x-forwarded-proto', 'https');
+  headers.set(PROXY_SECRET_HEADER, proxySecret);
   return headers;
 }
 
@@ -33,7 +36,7 @@ export default {
   fetch(request, env) {
     return fetch(toUpstreamUrl(request.url, env.API_ORIGIN), {
       method: request.method,
-      headers: toUpstreamHeaders(request),
+      headers: toUpstreamHeaders(request, env.PROXY_SHARED_SECRET),
       body: hasRequestBody(request.method) ? request.body : null,
       redirect: 'manual',
     });

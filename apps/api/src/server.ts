@@ -18,6 +18,9 @@ async function start(): Promise<void> {
     poolMaxWaiting: config.PG_POOL_MAX_WAITING,
     corsOrigin: config.CORS_ORIGIN,
     logLevel: config.LOG_LEVEL,
+    ...(config.PROXY_SHARED_SECRET !== undefined
+      ? { proxySharedSecret: config.PROXY_SHARED_SECRET }
+      : {}),
     enableDocs: true,
   });
 

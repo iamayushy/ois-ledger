@@ -17,6 +17,7 @@ export const AppConfigSchema = Type.Object({
   PG_POOL_MAX_WAITING: Type.Integer({ minimum: 1, default: 100 }),
   CORS_ORIGIN: Type.String({ default: 'http://localhost:5173' }),
   LOG_LEVEL: Type.String({ default: 'info' }),
+  PROXY_SHARED_SECRET: Type.Optional(Type.String({ minLength: 32 })),
 });
 
 export type AppConfig = Static<typeof AppConfigSchema>;

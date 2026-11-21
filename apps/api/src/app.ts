@@ -9,6 +9,7 @@ import { dbPlugin } from './plugins/db.js';
 import { errorHandlerPlugin } from './plugins/error-handler.js';
 import { createPoolBackpressureHook } from './plugins/pool-backpressure.js';
 import { pressurePlugin } from './plugins/pressure.js';
+import { proxyAuthPlugin } from './plugins/proxy-auth.js';
 import { swaggerPlugin } from './plugins/swagger.js';
 import { healthRoutes } from './routes/health.js';
 import { inventoryRoutes } from './routes/inventory.js';
@@ -30,6 +31,7 @@ export interface BuildAppOptions {
   readonly corsOrigin?: string | boolean;
   readonly logLevel?: string;
   readonly enablePressure?: boolean;
+  readonly proxySharedSecret?: string;
   readonly enableDocs?: boolean;
 }
 
@@ -80,6 +82,9 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(etag);
 
   await app.register(errorHandlerPlugin);
+  await app.register(proxyAuthPlugin, {
+    ...(options.proxySharedSecret !== undefined ? { secret: options.proxySharedSecret } : {}),
+  });
   await app.register(pressurePlugin, {
     ...(options.enablePressure !== undefined ? { enabled: options.enablePressure } : {}),
   });
