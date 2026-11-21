@@ -1,0 +1,43 @@
+{
+  "name": "@ois/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./schema": {
+      "types": "./src/schema.ts",
+      "default": "./src/schema.ts"
+    },
+    "./client": {
+      "types": "./src/client.ts",
+      "default": "./src/client.ts"
+    },
+    "./migrate": {
+      "types": "./src/migrate.ts",
+      "default": "./src/migrate.ts"
+    },
+    "./seed-data": {
+      "types": "./src/seed-data.ts",
+      "default": "./src/seed-data.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/migrate-cli.ts",
+    "db:seed": "tsx src/seed.ts",
+    "db:reset": "tsx src/reset.ts"
+  },
+  "dependencies": {
+    "@ois/shared": "workspace:*",
+    "dotenv": "^16.5.0",
+    "drizzle-orm": "^0.43.1",
+    "pg": "^8.15.6"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.14",
+    "drizzle-kit": "^0.31.1",
+    "tsx": "^4.19.4"
+  }
+}

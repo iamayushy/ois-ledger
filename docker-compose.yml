@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ois-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ois
+      POSTGRES_PASSWORD: ois_dev_password
+      POSTGRES_DB: ois
+    ports:
+      - "${PG_HOST_PORT:-5439}:5432"
+    command:
+      - postgres
+      - -c
+      - idle_in_transaction_session_timeout=15000
+      - -c
+      - lock_timeout=5000
+      - -c
+      - statement_timeout=10000
+      - -c
+      - log_lock_waits=on
+      - -c
+      - deadlock_timeout=1s
+      - -c
+      - max_connections=100
+    volumes:
+      - ois_pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ois -d ois"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  ois_pgdata:

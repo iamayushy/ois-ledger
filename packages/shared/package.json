@@ -1,0 +1,29 @@
+{
+  "name": "@ois/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./schemas": {
+      "types": "./src/schemas.ts",
+      "default": "./src/schemas.ts"
+    },
+    "./hash": {
+      "types": "./src/hash.ts",
+      "default": "./src/hash.ts"
+    },
+    "./uuidv7": {
+      "types": "./src/uuidv7.ts",
+      "default": "./src/uuidv7.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.33",
+    "uuid": "^11.1.0"
+  }
+}

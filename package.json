@@ -1,0 +1,27 @@
+{
+  "name": "ois-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.20.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"@ois/api\" --filter \"@ois/web\" dev",
+    "dev:api": "pnpm --filter @ois/api dev",
+    "dev:web": "pnpm --filter @ois/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:generate": "pnpm --filter @ois/db db:generate",
+    "db:migrate": "pnpm --filter @ois/db db:migrate",
+    "db:seed": "pnpm --filter @ois/db db:seed",
+    "db:reset": "pnpm --filter @ois/db db:reset"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.2"
+  }
+}

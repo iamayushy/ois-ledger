@@ -1,0 +1,658 @@
+{
+  "id": "c743572c-60a5-4eb8-a536-8698e7a0e386",
+  "prevId": "5600b65a-453b-494e-bf8d-0aefca9a2859",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.idempotency_key": {
+      "name": "idempotency_key",
+      "schema": "",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "request_hash": {
+          "name": "request_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "response_status": {
+          "name": "response_status",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "response_body": {
+          "name": "response_body",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idempotency_key_order_id_idx": {
+          "name": "idempotency_key_order_id_idx",
+          "columns": [
+            {
+              "expression": "order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "idempotency_key_order_id_reservation_order_id_fk": {
+          "name": "idempotency_key_order_id_reservation_order_id_fk",
+          "tableFrom": "idempotency_key",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "tableTo": "reservation_order",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "idempotency_key_status_check": {
+          "name": "idempotency_key_status_check",
+          "value": "\"idempotency_key\".\"status\" IN ('IN_PROGRESS', 'COMPLETED')"
+        },
+        "idempotency_key_completed_payload_check": {
+          "name": "idempotency_key_completed_payload_check",
+          "value": "(\"idempotency_key\".\"status\" = 'IN_PROGRESS') OR (\"idempotency_key\".\"status\" = 'COMPLETED' AND \"idempotency_key\".\"response_status\" IS NOT NULL AND \"idempotency_key\".\"response_body\" IS NOT NULL AND \"idempotency_key\".\"order_id\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.inventory_ledger": {
+      "name": "inventory_ledger",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "name": "inventory_ledger_id_seq",
+            "increment": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "startWith": "1",
+            "cache": "1",
+            "cycle": false,
+            "schema": "public",
+            "type": "always"
+          }
+        },
+        "sku": {
+          "name": "sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "delta": {
+          "name": "delta",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "available_after": {
+          "name": "available_after",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reserved_after": {
+          "name": "reserved_after",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "inventory_ledger_order_id_idx": {
+          "name": "inventory_ledger_order_id_idx",
+          "columns": [
+            {
+              "expression": "order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "inventory_ledger_sku_created_id_idx": {
+          "name": "inventory_ledger_sku_created_id_idx",
+          "columns": [
+            {
+              "expression": "sku",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "inventory_ledger_sku_product_sku_fk": {
+          "name": "inventory_ledger_sku_product_sku_fk",
+          "tableFrom": "inventory_ledger",
+          "columnsFrom": [
+            "sku"
+          ],
+          "tableTo": "product",
+          "columnsTo": [
+            "sku"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "inventory_ledger_order_id_reservation_order_id_fk": {
+          "name": "inventory_ledger_order_id_reservation_order_id_fk",
+          "tableFrom": "inventory_ledger",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "tableTo": "reservation_order",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "inventory_ledger_event_type_check": {
+          "name": "inventory_ledger_event_type_check",
+          "value": "\"inventory_ledger\".\"event_type\" IN ('SEED', 'RESERVE', 'RELEASE')"
+        },
+        "inventory_ledger_available_after_check": {
+          "name": "inventory_ledger_available_after_check",
+          "value": "\"inventory_ledger\".\"available_after\" >= 0"
+        },
+        "inventory_ledger_reserved_after_check": {
+          "name": "inventory_ledger_reserved_after_check",
+          "value": "\"inventory_ledger\".\"reserved_after\" >= 0"
+        },
+        "inventory_ledger_delta_sign_check": {
+          "name": "inventory_ledger_delta_sign_check",
+          "value": "(\"inventory_ledger\".\"event_type\" = 'RESERVE' AND \"inventory_ledger\".\"delta\" < 0) OR (\"inventory_ledger\".\"event_type\" = 'RELEASE' AND \"inventory_ledger\".\"delta\" > 0) OR (\"inventory_ledger\".\"event_type\" = 'SEED' AND \"inventory_ledger\".\"delta\" >= 0)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.order_item": {
+      "name": "order_item",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "name": "order_item_id_seq",
+            "increment": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "startWith": "1",
+            "cache": "1",
+            "cycle": false,
+            "schema": "public",
+            "type": "always"
+          }
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sku": {
+          "name": "sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_price_cents": {
+          "name": "unit_price_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "order_item_order_id_sku_unique": {
+          "name": "order_item_order_id_sku_unique",
+          "columns": [
+            {
+              "expression": "order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sku",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "order_item_sku_idx": {
+          "name": "order_item_sku_idx",
+          "columns": [
+            {
+              "expression": "sku",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "order_item_order_id_reservation_order_id_fk": {
+          "name": "order_item_order_id_reservation_order_id_fk",
+          "tableFrom": "order_item",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "tableTo": "reservation_order",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "order_item_sku_product_sku_fk": {
+          "name": "order_item_sku_product_sku_fk",
+          "tableFrom": "order_item",
+          "columnsFrom": [
+            "sku"
+          ],
+          "tableTo": "product",
+          "columnsTo": [
+            "sku"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "order_item_quantity_check": {
+          "name": "order_item_quantity_check",
+          "value": "\"order_item\".\"quantity\" > 0"
+        },
+        "order_item_unit_price_cents_check": {
+          "name": "order_item_unit_price_cents_check",
+          "value": "\"order_item\".\"unit_price_cents\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.product": {
+      "name": "product",
+      "schema": "",
+      "columns": {
+        "sku": {
+          "name": "sku",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price_cents": {
+          "name": "price_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_stock": {
+          "name": "total_stock",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "available_stock": {
+          "name": "available_stock",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reserved_stock": {
+          "name": "reserved_stock",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "product_price_cents_check": {
+          "name": "product_price_cents_check",
+          "value": "\"product\".\"price_cents\" >= 0"
+        },
+        "product_total_stock_check": {
+          "name": "product_total_stock_check",
+          "value": "\"product\".\"total_stock\" >= 0"
+        },
+        "product_available_stock_check": {
+          "name": "product_available_stock_check",
+          "value": "\"product\".\"available_stock\" >= 0"
+        },
+        "product_reserved_stock_check": {
+          "name": "product_reserved_stock_check",
+          "value": "\"product\".\"reserved_stock\" >= 0"
+        },
+        "product_stock_conservation_check": {
+          "name": "product_stock_conservation_check",
+          "value": "\"product\".\"available_stock\" + \"product\".\"reserved_stock\" = \"product\".\"total_stock\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.reservation_order": {
+      "name": "reservation_order",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_cents": {
+          "name": "total_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "reservation_order_status_created_id_idx": {
+          "name": "reservation_order_status_created_id_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "reservation_order_created_id_idx": {
+          "name": "reservation_order_created_id_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "reservation_order_customer_id_idx": {
+          "name": "reservation_order_customer_id_idx",
+          "columns": [
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "reservation_order_idempotency_key_unique": {
+          "name": "reservation_order_idempotency_key_unique",
+          "columns": [
+            "idempotency_key"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "reservation_order_status_check": {
+          "name": "reservation_order_status_check",
+          "value": "\"reservation_order\".\"status\" IN ('RESERVED', 'CANCELLED')"
+        },
+        "reservation_order_total_cents_check": {
+          "name": "reservation_order_total_cents_check",
+          "value": "\"reservation_order\".\"total_cents\" >= 0"
+        },
+        "reservation_order_cancelled_at_check": {
+          "name": "reservation_order_cancelled_at_check",
+          "value": "(\"reservation_order\".\"status\" = 'CANCELLED' AND \"reservation_order\".\"cancelled_at\" IS NOT NULL) OR (\"reservation_order\".\"status\" = 'RESERVED' AND \"reservation_order\".\"cancelled_at\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "views": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
