@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "ois-api-proxy",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-11-19",
+  "routes": [{ "pattern": "ois.atlair.cloud", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "API_ORIGIN": "https://oms-service.cloud.run"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

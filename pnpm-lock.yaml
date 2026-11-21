@@ -88,6 +88,12 @@ importers:
         specifier: ^4.19.4
         version: 4.23.15
 
+  apps/api-proxy:
+    devDependencies:
+      wrangler:
+        specifier: 4.166.0
+        version: 4.166.0(@types/node@22.20.5)(vitest@3.2.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1))
+
   apps/web:
     dependencies:
       '@base-ui/react':
