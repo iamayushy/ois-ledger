@@ -254,18 +254,29 @@ Code 1301 covers:
 
 ### No partial writes (all-or-nothing)
 
-A create runs as **one PostgreSQL transaction**, in this order:
+A create runs as **one PostgreSQL transaction with 5 round trips**. Only 3 of them happen while the product rows are locked:
 
 1. Validate the payload, canonicalize it and compute its SHA-256 hash, all **before** taking a DB connection, so the transaction does no CPU work.
 2. `BEGIN`.
-3. Claim the key: `INSERT INTO idempotency_key … ON CONFLICT (key) DO NOTHING RETURNING key`.
-4. Lock the products: `SELECT … FROM product WHERE sku IN (…) ORDER BY sku ASC FOR UPDATE`.
-5. If any SKU is missing or short, throw. This causes a **ROLLBACK**, which discards the key claim as well, so no order, item, ledger or key rows remain.
-6. Write the rows:
-   - `INSERT reservation_order`, then `order_item`.
-   - One batched `UPDATE product … FROM (VALUES …)` covering every item.
-   - `INSERT inventory_ledger`.
-7. Mark the key `COMPLETED` and store the full response body, then `COMMIT`.
+3. Set the transaction's timeouts and claim the key in **one statement**: `WITH settings AS (SELECT set_config('lock_timeout', …, true), …) INSERT INTO idempotency_key … ON CONFLICT (key) DO NOTHING RETURNING key`. The timeouts are transaction-local (`is_local = true`), so they apply even through Supabase's transaction pooler, which drops session settings.
+4. 🔒 Lock the products: `SELECT … FROM product WHERE sku = ANY($1::text[]) ORDER BY sku ASC FOR UPDATE`. The SKU list is a single array parameter, so there is one cached plan for any number of items.
+5. If any SKU is missing or short, throw (computed in the app, so the error lists exact `shortages`). This causes a **ROLLBACK**, which discards the key claim as well, so no order, item, ledger or key rows remain.
+6. 🔒 Write everything in **one statement** with data-modifying CTEs:
+   - `stock`: one batched `UPDATE product … FROM (VALUES …)` covering every item.
+   - `new_order`: `INSERT reservation_order`.
+   - `items`: `INSERT order_item`.
+   - `ledger`: `INSERT inventory_ledger`.
+   - The statement itself: `UPDATE idempotency_key SET status = 'COMPLETED'` with the full response body.
+
+   A single statement is atomic, and foreign keys are checked when it finishes, so the child rows can reference the order inserted in the same statement. Row counts are checked, and any mismatch rolls back.
+7. 🔒 `COMMIT`.
+
+Cancel follows the same pattern in 6 round trips:
+- lock the order (`FOR UPDATE`) together with setting the timeouts;
+- read its items;
+- lock the products in SKU order;
+- one statement that releases stock, writes the `RELEASE` ledger rows and marks the order `CANCELLED`;
+- `COMMIT`.
 
 PostgreSQL enforces the stock invariants as a backstop, so even a bug in the code cannot commit bad state:
 - `CHECK (available_stock >= 0)`
@@ -404,9 +415,7 @@ The console at http://localhost:5173 lets an operator:
 ## 5. What I'd improve for production
 
 **Throughput on hot SKUs**
-- Today the product row lock is held across about 6 round trips. Two changes would shrink that:
-  - Collapse lock, check and decrement into one guarded statement: `UPDATE product SET … WHERE sku = ANY($1) AND available_stock >= qty RETURNING …`.
-  - Build the order and item rows before taking the lock.
+- The product row lock is now held across 3 round trips (lock, single write statement, commit), down from 7. The next step would be a stored procedure that locks, checks and writes in one call, at the cost of moving business logic into SQL.
 - Fail fast on sold-out SKUs with an unlocked read before claiming a key, so a sold-out SKU doesn't build a lock queue.
 - For flash sales, split very hot SKUs into N stock "buckets", or queue reservations per SKU.
 

@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import etag from '@fastify/etag';
 import helmet from '@fastify/helmet';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { LogController, type FastifyInstance } from 'fastify';
 import { generateUuidV7 } from '@ois/shared/uuidv7';
 import type { DbClient } from '@ois/db/client';
 import { canonicalLogPlugin, REQUEST_ID_HEADER } from './plugins/canonical-log.js';
@@ -83,8 +83,7 @@ const DEFAULT_POOL_MAX_WAITING = 100;
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: options.logLevel === 'silent' ? false : buildLoggerOptions(options),
-    disableRequestLogging: true,
-    requestIdLogLabel: 'request_id',
+    logController: new LogController({ disableRequestLogging: true, requestIdLogLabel: 'request_id' }),
     genReqId: () => generateUuidV7(),
     ajv: {
       customOptions: {

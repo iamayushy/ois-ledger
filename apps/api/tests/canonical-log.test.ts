@@ -103,7 +103,7 @@ describe('Canonical log lines', () => {
       idempotency_replayed: false,
       db_acquire_count: 1,
     });
-    expect(Number(line['db_query_count'])).toBeGreaterThanOrEqual(6);
+    expect(line['db_query_count']).toBe(5);
     expect(Number(line['db_duration_ms'])).toBeGreaterThan(0);
     expect(Number(line['duration_ms'])).toBeGreaterThanOrEqual(Number(line['db_duration_ms']));
     expect(typeof line['db_slowest_statement']).toBe('string');

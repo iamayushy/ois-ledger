@@ -49,6 +49,31 @@ interface OrderHeaderRow {
   readonly cancelledAt: Date | null;
 }
 
+type OrderLockRow = {
+  readonly id: string;
+  readonly idempotency_key: string;
+  readonly customer_id: string;
+  readonly status: string;
+  readonly total_paise: string | number;
+  readonly created_at: string | Date;
+  readonly cancelled_at: string | Date | null;
+};
+
+function toOrderHeaderRow(row: OrderLockRow | undefined): OrderHeaderRow | null {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    idempotencyKey: row.idempotency_key,
+    customerId: row.customer_id,
+    status: row.status,
+    totalPaise: Number(row.total_paise),
+    createdAt: new Date(row.created_at),
+    cancelledAt: row.cancelled_at === null ? null : new Date(row.cancelled_at),
+  };
+}
+
 interface CursorPayload {
   readonly createdAt: string;
   readonly id: string;
@@ -102,10 +127,146 @@ function assembleOrderDto(header: OrderHeaderRow, items: OrderItemDto[]): OrderD
   };
 }
 
-async function applyTransactionTimeouts(executor: DbExecutor): Promise<void> {
-  await executor.execute(
-    sql`SELECT set_config('lock_timeout', '5000', true), set_config('statement_timeout', '10000', true)`,
+const TRANSACTION_SETTINGS = sql`
+  SELECT
+    set_config('lock_timeout', '5000', true) AS lock_timeout,
+    set_config('statement_timeout', '10000', true) AS statement_timeout
+`;
+
+function skuIsAnyOf(skus: readonly string[]): SQL {
+  return sql`${product.sku} = ANY(${sql.param([...skus])}::text[])`;
+}
+
+interface StockLine {
+  readonly sku: string;
+  readonly quantity: number;
+  readonly unitPricePaise: number;
+  readonly availableAfter: number;
+  readonly reservedAfter: number;
+}
+
+interface ReservationWrite {
+  readonly orderId: string;
+  readonly idempotencyKey: string;
+  readonly customerId: string;
+  readonly totalPaise: number;
+  readonly createdAt: Date;
+  readonly lines: readonly StockLine[];
+  readonly response: OrderDto;
+}
+
+type WriteCounts = {
+  readonly stock_rows: number;
+  readonly item_rows: number;
+  readonly ledger_rows: number;
+};
+
+function stockLineValues(lines: readonly StockLine[]): SQL {
+  return sql.join(
+    lines.map(
+      (line) =>
+        sql`(${line.sku}::text, ${line.quantity}::integer, ${line.unitPricePaise}::integer, ${line.availableAfter}::integer, ${line.reservedAfter}::integer)`,
+    ),
+    sql`, `,
   );
+}
+
+async function writeReservation(executor: DbExecutor, write: ReservationWrite): Promise<void> {
+  const result = await executor.execute<WriteCounts>(sql`
+    WITH line(sku, qty, unit_price, available_after, reserved_after) AS (
+      VALUES ${stockLineValues(write.lines)}
+    ),
+    stock AS (
+      UPDATE product AS p
+      SET
+        available_stock = p.available_stock - line.qty,
+        reserved_stock = p.reserved_stock + line.qty,
+        updated_at = ${write.createdAt}::timestamptz
+      FROM line
+      WHERE p.sku = line.sku
+      RETURNING p.sku
+    ),
+    new_order AS (
+      INSERT INTO reservation_order (id, idempotency_key, customer_id, status, total_paise, created_at)
+      VALUES (${write.orderId}::uuid, ${write.idempotencyKey}, ${write.customerId}, 'RESERVED', ${write.totalPaise}::bigint, ${write.createdAt}::timestamptz)
+      RETURNING id
+    ),
+    items AS (
+      INSERT INTO order_item (order_id, sku, quantity, unit_price_paise, created_at)
+      SELECT new_order.id, line.sku, line.qty, line.unit_price, ${write.createdAt}::timestamptz
+      FROM new_order CROSS JOIN line
+      RETURNING sku
+    ),
+    ledger AS (
+      INSERT INTO inventory_ledger (sku, order_id, idempotency_key, event_type, delta, available_after, reserved_after, created_at)
+      SELECT line.sku, new_order.id, ${write.idempotencyKey}, 'RESERVE', -line.qty, line.available_after, line.reserved_after, ${write.createdAt}::timestamptz
+      FROM new_order CROSS JOIN line
+      RETURNING sku
+    )
+    UPDATE idempotency_key
+    SET
+      status = 'COMPLETED',
+      response_status = 201,
+      response_body = ${JSON.stringify(write.response)}::jsonb,
+      order_id = (SELECT id FROM new_order),
+      updated_at = ${write.createdAt}::timestamptz
+    WHERE key = ${write.idempotencyKey}
+    RETURNING
+      (SELECT count(*) FROM stock)::integer AS stock_rows,
+      (SELECT count(*) FROM items)::integer AS item_rows,
+      (SELECT count(*) FROM ledger)::integer AS ledger_rows
+  `);
+  assertAllLinesWritten(result.rows[0], write.lines.length);
+}
+
+interface ReleaseWrite {
+  readonly orderId: string;
+  readonly idempotencyKey: string;
+  readonly cancelledAt: Date;
+  readonly lines: readonly StockLine[];
+}
+
+async function writeRelease(executor: DbExecutor, write: ReleaseWrite): Promise<void> {
+  const result = await executor.execute<WriteCounts>(sql`
+    WITH line(sku, qty, unit_price, available_after, reserved_after) AS (
+      VALUES ${stockLineValues(write.lines)}
+    ),
+    stock AS (
+      UPDATE product AS p
+      SET
+        available_stock = p.available_stock + line.qty,
+        reserved_stock = p.reserved_stock - line.qty,
+        updated_at = ${write.cancelledAt}::timestamptz
+      FROM line
+      WHERE p.sku = line.sku
+      RETURNING p.sku
+    ),
+    ledger AS (
+      INSERT INTO inventory_ledger (sku, order_id, idempotency_key, event_type, delta, available_after, reserved_after, created_at)
+      SELECT line.sku, ${write.orderId}::uuid, ${write.idempotencyKey}, 'RELEASE', line.qty, line.available_after, line.reserved_after, ${write.cancelledAt}::timestamptz
+      FROM line
+      RETURNING sku
+    )
+    UPDATE reservation_order
+    SET status = 'CANCELLED', cancelled_at = ${write.cancelledAt}::timestamptz
+    WHERE id = ${write.orderId}::uuid
+    RETURNING
+      (SELECT count(*) FROM stock)::integer AS stock_rows,
+      (SELECT count(*) FROM line)::integer AS item_rows,
+      (SELECT count(*) FROM ledger)::integer AS ledger_rows
+  `);
+  assertAllLinesWritten(result.rows[0], write.lines.length);
+}
+
+function assertAllLinesWritten(counts: WriteCounts | undefined, expected: number): void {
+  if (
+    !counts ||
+    counts.stock_rows !== expected ||
+    counts.item_rows !== expected ||
+    counts.ledger_rows !== expected
+  ) {
+    throw transientDbError('Reservation write affected an unexpected number of rows; retry request');
+  }
 }
 
 async function fetchItemsByOrderIds(
@@ -148,44 +309,6 @@ async function fetchItemsByOrderIds(
   return itemsByOrder;
 }
 
-async function batchUpdateProductStock(
-  executor: DbExecutor,
-  deltas: readonly { readonly sku: string; readonly quantity: number }[],
-  direction: 'reserve' | 'release',
-  updatedAt: Date,
-): Promise<void> {
-  if (deltas.length === 0) {
-    return;
-  }
-
-  const valueTuples = deltas.map(
-    (entry) => sql`(${entry.sku}::text, ${entry.quantity}::integer)`,
-  );
-  const valuesClause = sql.join(valueTuples, sql`, `);
-
-  if (direction === 'reserve') {
-    await executor.execute(sql`
-      UPDATE product AS p
-      SET
-        available_stock = p.available_stock - v.qty,
-        reserved_stock = p.reserved_stock + v.qty,
-        updated_at = ${updatedAt}
-      FROM (VALUES ${valuesClause}) AS v(sku, qty)
-      WHERE p.sku = v.sku
-    `);
-    return;
-  }
-
-  await executor.execute(sql`
-    UPDATE product AS p
-    SET
-      available_stock = p.available_stock + v.qty,
-      reserved_stock = p.reserved_stock - v.qty,
-      updated_at = ${updatedAt}
-    FROM (VALUES ${valuesClause}) AS v(sku, qty)
-    WHERE p.sku = v.sku
-  `);
-}
 
 export async function createOrder(
   db: OisDatabase,
@@ -213,22 +336,15 @@ export async function createOrder(
   const skus = canonical.items.map((item) => item.sku);
 
   return db.transaction(async (tx) => {
-    await applyTransactionTimeouts(tx);
+    const claimed = await tx.execute<{ key: string }>(sql`
+      WITH settings AS (${TRANSACTION_SETTINGS})
+      INSERT INTO idempotency_key (key, request_hash, status)
+      SELECT ${trimmedKey}, ${requestHash}, 'IN_PROGRESS' FROM settings
+      ON CONFLICT (key) DO NOTHING
+      RETURNING key
+    `);
 
-    const claimed = await tx
-      .insert(idempotencyKey)
-      .values({
-        key: trimmedKey,
-        requestHash,
-        status: 'IN_PROGRESS',
-        responseStatus: null,
-        responseBody: null,
-        orderId: null,
-      })
-      .onConflictDoNothing({ target: idempotencyKey.key })
-      .returning({ key: idempotencyKey.key });
-
-    if (claimed.length === 0) {
+    if (claimed.rows.length === 0) {
       const [existing] = await tx
         .select({
           requestHash: idempotencyKey.requestHash,
@@ -265,7 +381,7 @@ export async function createOrder(
         reservedStock: product.reservedStock,
       })
       .from(product)
-      .where(inArray(product.sku, skus))
+      .where(skuIsAnyOf(skus))
       .orderBy(asc(product.sku))
       .for('update');
 
@@ -300,25 +416,8 @@ export async function createOrder(
     const orderId = generateUuidV7();
     let totalPaise = 0;
 
-    const orderItemValues: {
-      readonly orderId: string;
-      readonly sku: string;
-      readonly quantity: number;
-      readonly unitPricePaise: number;
-      readonly createdAt: Date;
-    }[] = [];
-
     const orderItemDtos: OrderItemDto[] = [];
-    const ledgerValues: {
-      readonly sku: string;
-      readonly orderId: string;
-      readonly idempotencyKey: string;
-      readonly eventType: string;
-      readonly delta: number;
-      readonly availableAfter: number;
-      readonly reservedAfter: number;
-      readonly createdAt: Date;
-    }[] = [];
+    const lines: StockLine[] = [];
 
     for (const item of canonical.items) {
       const locked = productBySku.get(item.sku);
@@ -328,14 +427,6 @@ export async function createOrder(
 
       totalPaise += locked.pricePaise * item.quantity;
 
-      orderItemValues.push({
-        orderId,
-        sku: item.sku,
-        quantity: item.quantity,
-        unitPricePaise: locked.pricePaise,
-        createdAt: now,
-      });
-
       orderItemDtos.push({
         sku: item.sku,
         productName: locked.name,
@@ -343,15 +434,12 @@ export async function createOrder(
         unitPricePaise: locked.pricePaise,
       });
 
-      ledgerValues.push({
+      lines.push({
         sku: item.sku,
-        orderId,
-        idempotencyKey: trimmedKey,
-        eventType: 'RESERVE',
-        delta: -item.quantity,
+        quantity: item.quantity,
+        unitPricePaise: locked.pricePaise,
         availableAfter: locked.availableStock - item.quantity,
         reservedAfter: locked.reservedStock + item.quantity,
-        createdAt: now,
       });
     }
 
@@ -366,32 +454,15 @@ export async function createOrder(
       items: orderItemDtos,
     };
 
-    await tx.insert(reservationOrder).values({
-      id: orderId,
+    await writeReservation(tx, {
+      orderId,
       idempotencyKey: trimmedKey,
       customerId: canonical.customerId,
-      status: 'RESERVED',
       totalPaise,
       createdAt: now,
-      cancelledAt: null,
+      lines,
+      response: orderDto,
     });
-
-    await tx.insert(orderItem).values(orderItemValues);
-
-    await batchUpdateProductStock(tx, canonical.items, 'reserve', now);
-
-    await tx.insert(inventoryLedger).values(ledgerValues);
-
-    await tx
-      .update(idempotencyKey)
-      .set({
-        status: 'COMPLETED',
-        responseStatus: 201,
-        responseBody: orderDto,
-        orderId,
-        updatedAt: now,
-      })
-      .where(eq(idempotencyKey.key, trimmedKey));
 
     return {
       order: orderDto,
@@ -410,21 +481,14 @@ export async function cancelOrder(
   }
 
   return db.transaction(async (tx) => {
-    await applyTransactionTimeouts(tx);
-
-    const [lockedOrder] = await tx
-      .select({
-        id: reservationOrder.id,
-        idempotencyKey: reservationOrder.idempotencyKey,
-        customerId: reservationOrder.customerId,
-        status: reservationOrder.status,
-        totalPaise: reservationOrder.totalPaise,
-        createdAt: reservationOrder.createdAt,
-        cancelledAt: reservationOrder.cancelledAt,
-      })
-      .from(reservationOrder)
-      .where(eq(reservationOrder.id, orderId))
-      .for('update');
+    const lockedRows = await tx.execute<OrderLockRow>(sql`
+      WITH settings AS (${TRANSACTION_SETTINGS})
+      SELECT o.id, o.idempotency_key, o.customer_id, o.status, o.total_paise, o.created_at, o.cancelled_at
+      FROM reservation_order AS o CROSS JOIN settings
+      WHERE o.id = ${orderId}::uuid
+      FOR UPDATE OF o
+    `);
+    const lockedOrder = toOrderHeaderRow(lockedRows.rows[0]);
 
     if (!lockedOrder) {
       throw orderNotFoundError(orderId);
@@ -457,46 +521,33 @@ export async function cancelOrder(
         reservedStock: product.reservedStock,
       })
       .from(product)
-      .where(inArray(product.sku, skus))
+      .where(skuIsAnyOf(skus))
       .orderBy(asc(product.sku))
       .for('update');
 
     const productBySku = new Map(lockedProducts.map((row) => [row.sku, row]));
     const now = new Date();
 
-    await tx
-      .update(reservationOrder)
-      .set({
-        status: 'CANCELLED',
-        cancelledAt: now,
-      })
-      .where(eq(reservationOrder.id, lockedOrder.id));
-
-    await batchUpdateProductStock(
-      tx,
-      items.map((item) => ({ sku: item.sku, quantity: item.quantity })),
-      'release',
-      now,
-    );
-
-    const releaseLedgerRows = items.map((item) => {
+    const releaseLines: StockLine[] = items.map((item) => {
       const locked = productBySku.get(item.sku);
       if (!locked) {
         throw transientDbError(`Product row missing during cancellation for SKU: ${item.sku}`);
       }
       return {
         sku: item.sku,
-        orderId: lockedOrder.id,
-        idempotencyKey: lockedOrder.idempotencyKey,
-        eventType: 'RELEASE',
-        delta: item.quantity,
+        quantity: item.quantity,
+        unitPricePaise: item.unitPricePaise,
         availableAfter: locked.availableStock + item.quantity,
         reservedAfter: locked.reservedStock - item.quantity,
-        createdAt: now,
       };
     });
 
-    await tx.insert(inventoryLedger).values(releaseLedgerRows);
+    await writeRelease(tx, {
+      orderId: lockedOrder.id,
+      idempotencyKey: lockedOrder.idempotencyKey,
+      cancelledAt: now,
+      lines: releaseLines,
+    });
 
     const updatedOrder = assembleOrderDto(
       {
