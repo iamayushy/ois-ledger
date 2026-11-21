@@ -24,3 +24,7 @@ coverage/
 .claude/
 skills/
 skills-lock.json
+
+.wrangler/
+.dev.vars*
+!.dev.vars.example
