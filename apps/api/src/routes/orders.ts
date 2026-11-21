@@ -18,6 +18,7 @@ import {
   getOrderDetailByIdempotencyKey,
   listOrders,
 } from '../services/order-service.js';
+import { recordRejectionIfApplicable } from '../services/rejection-service.js';
 
 export const orderRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.post(
@@ -40,10 +41,18 @@ export const orderRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
       },
     },
     async (request, reply) => {
-      const result = await createOrder(
-        fastify.db,
-        request.headers['idempotency-key'],
-        request.body,
+      const idempotencyKeyHeader = request.headers['idempotency-key'];
+      const result = await createOrder(fastify.db, idempotencyKeyHeader, request.body).catch(
+        async (error: unknown) => {
+          await recordRejectionIfApplicable(
+            fastify.db,
+            request.log,
+            idempotencyKeyHeader,
+            request.body,
+            error,
+          );
+          throw error;
+        },
       );
 
       request.log.info(

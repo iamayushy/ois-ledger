@@ -1,4 +1,6 @@
 import { useSkuDetail } from '../../../api/inventory';
+import { useRejections } from '../../../api/rejections';
+import { RejectionList } from '../../../components/shared/rejection-list';
 import { GhostButton, PrimaryButton } from '../../../components/shared/button';
 import { LedgerTimeline } from '../../../components/shared/ledger-timeline';
 import { StockTierIndicator } from '../../../components/shared/status-badge';
@@ -9,6 +11,7 @@ export function SkuDetailPanel({ onClose, onBack }: { onClose: () => void; onBac
   const actions = useWorkbenchActions();
   const { selectedSku } = useWorkbenchNavigation();
   const detailSwr = useSkuDetail(selectedSku);
+  const rejectionsSwr = useRejections({ sku: selectedSku ?? undefined });
   const detail = detailSwr.data;
 
   const invariantHolds = detail
@@ -80,6 +83,21 @@ export function SkuDetailPanel({ onClose, onBack }: { onClose: () => void; onBac
                 <p className="mb-0 font-mono tabular-nums text-fg">Available {detail.product.availableStock} + reserved {detail.product.reservedStock} = total {detail.product.totalStock}</p>
               </div>
             </details>
+
+            <div className="border-b border-border py-4">
+              <div className="mb-1 flex items-center justify-between">
+                <h3 className="m-0 text-[14px] font-semibold text-fg-strong">Rejected attempts</h3>
+                <span className="font-mono text-[13px] tabular-nums text-fg-muted">
+                  {rejectionsSwr.data ? rejectionsSwr.data.rejections.length : '…'}
+                </span>
+              </div>
+              <p className="mb-1 mt-0 text-[13px] text-fg-muted">Requests that lost a race or could not be fully reserved. Nothing was reserved for them.</p>
+              {rejectionsSwr.error ? (
+                <p className="m-0 text-[13px] text-danger">Failed to load rejected attempts: {rejectionsSwr.error.message}</p>
+              ) : (
+                <RejectionList rejections={rejectionsSwr.data?.rejections ?? []} emptyText="No rejected attempts for this SKU." />
+              )}
+            </div>
 
             <div className="pt-4">
               <div className="mb-2 flex items-center justify-between">

@@ -161,17 +161,44 @@ export const inventoryLedger = pgTable(
   ],
 );
 
+export interface RejectionDetails {
+  readonly items: readonly { readonly sku: string; readonly quantity: number }[];
+  readonly shortages: readonly { readonly sku: string; readonly requested: number; readonly available: number }[];
+  readonly missingSkus: readonly string[];
+}
+
+export const reservationRejection = pgTable(
+  'reservation_rejection',
+  {
+    id: bigint('id', { mode: 'bigint' }).generatedAlwaysAsIdentity().primaryKey(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    customerId: text('customer_id').notNull(),
+    requestHash: text('request_hash').notNull(),
+    errorCode: integer('error_code').notNull(),
+    skus: text('skus').array().notNull(),
+    details: jsonb('details').$type<RejectionDetails>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('reservation_rejection_error_code_check', sql`${table.errorCode} IN (1102, 1201, 1202)`),
+    index('reservation_rejection_key_id_idx').on(table.idempotencyKey, table.id.desc()),
+    index('reservation_rejection_skus_gin_idx').using('gin', table.skus),
+  ],
+);
+
 export const dbSchema = {
   product,
   reservationOrder,
   orderItem,
   idempotencyKey,
   inventoryLedger,
+  reservationRejection,
 };
 
 export type DbSchema = typeof dbSchema;
 export type ProductRow = typeof product.$inferSelect;
 export type ReservationOrderRow = typeof reservationOrder.$inferSelect;
 export type OrderItemRow = typeof orderItem.$inferSelect;
+export type ReservationRejectionRow = typeof reservationRejection.$inferSelect;
 export type IdempotencyKeyRow = typeof idempotencyKey.$inferSelect;
 export type InventoryLedgerRow = typeof inventoryLedger.$inferSelect;

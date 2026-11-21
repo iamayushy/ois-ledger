@@ -1,5 +1,6 @@
 import { count, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
+import type { PoolClient } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { DbClient } from '@ois/db/client';
 import {
@@ -8,6 +9,7 @@ import {
   orderItem,
   product,
   reservationOrder,
+  reservationRejection,
 } from '@ois/db/schema';
 import {
   ERROR_CODE,
@@ -15,6 +17,7 @@ import {
   type CreateOrderBody,
   type CreateOrderResponse,
   type ErrorResponse,
+  type ListRejectionsResponse,
 } from '@ois/shared/schemas';
 import { buildApp } from '../src/app.js';
 import {
@@ -65,6 +68,46 @@ async function postCancel(
     headers: response.headers,
     body,
   };
+}
+
+async function countLockWaiters(dbClient: DbClient): Promise<number> {
+  const result = await dbClient.pool.query<{ waiting: string }>(
+    `SELECT count(*)::text AS waiting FROM pg_stat_activity
+     WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()`,
+  );
+  return Number(result.rows[0]?.waiting ?? '0');
+}
+
+async function waitForLockWaiters(dbClient: DbClient, expected: number): Promise<void> {
+  const deadline = Date.now() + 4_000;
+  while (Date.now() < deadline) {
+    if ((await countLockWaiters(dbClient)) >= expected) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out waiting for ${expected} lock waiters`);
+}
+
+async function holdProductRowLock(dbClient: DbClient, sku: string): Promise<PoolClient> {
+  const holder = await dbClient.pool.connect();
+  await holder.query('BEGIN');
+  await holder.query('SELECT sku FROM product WHERE sku = $1 FOR UPDATE', [sku]);
+  return holder;
+}
+
+async function releaseProductRowLock(holder: PoolClient): Promise<void> {
+  await holder.query('COMMIT');
+  holder.release();
+}
+
+async function listRejectionsOverHttp(
+  baseUrl: string,
+  query: string,
+): Promise<ListRejectionsResponse> {
+  const response = await fetch(`${baseUrl}/api/rejections?${query}`);
+  expect(response.status).toBe(200);
+  return (await response.json()) as ListRejectionsResponse;
 }
 
 describe('Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs', () => {
@@ -133,6 +176,15 @@ describe('Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs', () => {
 
     const [orderCount] = await dbClient.db.select({ total: count() }).from(reservationOrder);
     expect(orderCount?.total).toBe(1);
+
+    const losers = await listRejectionsOverHttp(baseUrl, 'sku=SKU-LAST-UNIT&limit=100');
+    expect(losers.rejections).toHaveLength(concurrency - 1);
+    expect(new Set(losers.rejections.map((r) => r.idempotencyKey)).size).toBe(concurrency - 1);
+    for (const rejection of losers.rejections) {
+      expect(rejection.reason).toBe('INSUFFICIENT_STOCK');
+      expect(rejection.errorCode).toBe(ERROR_CODE.INSUFFICIENT_STOCK);
+      expect(rejection.shortages).toEqual([{ sku: 'SKU-LAST-UNIT', requested: 1, available: 0 }]);
+    }
 
     await assertInventoryInvariants(dbClient.db);
   });
@@ -287,6 +339,12 @@ describe('Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs', () => {
       reserved: 1 + winningQty,
     });
 
+    const conflictLog = await dbClient.db
+      .select({ key: reservationRejection.idempotencyKey, code: reservationRejection.errorCode })
+      .from(reservationRejection);
+    expect(conflictLog).toHaveLength(2 + raceConflicts.length);
+    expect(conflictLog.every((row) => row.code === ERROR_CODE.IDEMPOTENCY_CONFLICT)).toBe(true);
+
     await assertInventoryInvariants(dbClient.db);
   });
 
@@ -338,6 +396,19 @@ describe('Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs', () => {
     expect(itemsCount?.total).toBe(0);
     expect(keysCount?.total).toBe(0);
     expect(reserveLedgerCount?.total).toBe(0);
+
+    const failedAttempt = await listRejectionsOverHttp(baseUrl, 'idempotencyKey=atomic-fail-key-001');
+    expect(failedAttempt.rejections).toHaveLength(1);
+    expect(failedAttempt.rejections[0]).toMatchObject({
+      reason: 'INSUFFICIENT_STOCK',
+      customerId: 'cust-atomic',
+      items: [
+        { sku: 'SKU-A', quantity: 2 },
+        { sku: 'SKU-B', quantity: 3 },
+        { sku: 'SKU-C', quantity: 4 },
+      ],
+      shortages: [{ sku: 'SKU-B', requested: 3, available: 1 }],
+    });
 
     await assertInventoryInvariants(dbClient.db);
   });
@@ -441,6 +512,108 @@ describe('Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs', () => {
       .where(eq(inventoryLedger.eventType, 'RELEASE'));
     expect(releaseRows?.total).toBe(2);
 
+    await assertInventoryInvariants(dbClient.db);
+  });
+
+  it('Proof 7 (Forced In-Flight Overlap): retries provably arrive while the first attempt holds the key uncommitted, then all replay the single order', async () => {
+    await seedTestProducts(dbClient.db, [
+      { sku: 'SKU-HOLD', name: 'Held Widget', pricePaise: 1000, totalStock: 5 },
+    ]);
+    const key = 'forced-overlap-key-001';
+    const payload: CreateOrderBody = { customerId: 'cust-hold', items: [{ sku: 'SKU-HOLD', quantity: 1 }] };
+
+    const holder = await holdProductRowLock(dbClient, 'SKU-HOLD');
+    const settled: string[] = [];
+    const first = postOrder(baseUrl, key, payload).then((r) => {
+      settled.push('first');
+      return r;
+    });
+    await waitForLockWaiters(dbClient, 1);
+
+    const retries = Array.from({ length: 9 }, () =>
+      postOrder(baseUrl, key, payload).then((r) => {
+        settled.push('retry');
+        return r;
+      }),
+    );
+    await waitForLockWaiters(dbClient, 10);
+    expect(settled).toHaveLength(0);
+
+    const [inFlightKey] = await dbClient.db
+      .select({ total: count() })
+      .from(idempotencyKey);
+    expect(inFlightKey?.total).toBe(0);
+
+    await releaseProductRowLock(holder);
+    const results = await Promise.all([first, ...retries]);
+
+    const created = results.filter((r) => r.status === 201);
+    const replayed = results.filter((r) => r.status === 200);
+    expect(created).toHaveLength(1);
+    expect(replayed).toHaveLength(9);
+    const orderId = (created[0]?.body as CreateOrderResponse).order.id;
+    for (const replay of replayed) {
+      expect((replay.body as CreateOrderResponse).order.id).toBe(orderId);
+      expect(replay.headers.get('idempotency-replayed')).toBe('true');
+    }
+
+    const [skuRow] = await dbClient.db
+      .select({ available: product.availableStock, reserved: product.reservedStock })
+      .from(product)
+      .where(eq(product.sku, 'SKU-HOLD'));
+    expect(skuRow).toEqual({ available: 4, reserved: 1 });
+    const [orders] = await dbClient.db.select({ total: count() }).from(reservationOrder);
+    expect(orders?.total).toBe(1);
+    await assertInventoryInvariants(dbClient.db);
+  });
+
+  it('Proof 8 (Client Timeout Then Retry): the client gives up mid-flight, the server still commits, and the retry returns the original order without a second reservation', async () => {
+    await seedTestProducts(dbClient.db, [
+      { sku: 'SKU-TIMEOUT', name: 'Slow Widget', pricePaise: 2500, totalStock: 3 },
+    ]);
+    const key = 'client-timeout-key-001';
+    const payload: CreateOrderBody = { customerId: 'cust-timeout', items: [{ sku: 'SKU-TIMEOUT', quantity: 2 }] };
+
+    const holder = await holdProductRowLock(dbClient, 'SKU-TIMEOUT');
+    const abort = new AbortController();
+    const timedOut = fetch(`${baseUrl}/api/orders`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': key },
+      body: JSON.stringify(payload),
+      signal: abort.signal,
+    }).then(
+      () => 'completed',
+      (error: unknown) => (error instanceof Error ? error.name : 'failed'),
+    );
+    await waitForLockWaiters(dbClient, 1);
+    abort.abort();
+    expect(await timedOut).toBe('AbortError');
+
+    await releaseProductRowLock(holder);
+    const deadline = Date.now() + 4_000;
+    let committed = 0;
+    while (committed === 0 && Date.now() < deadline) {
+      const [row] = await dbClient.db.select({ total: count() }).from(reservationOrder);
+      committed = row?.total ?? 0;
+      if (committed === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    expect(committed).toBe(1);
+
+    const retry = await postOrder(baseUrl, key, payload);
+    expect(retry.status).toBe(200);
+    expect(retry.headers.get('idempotency-replayed')).toBe('true');
+    const [original] = await dbClient.db.select({ id: reservationOrder.id }).from(reservationOrder);
+    expect((retry.body as CreateOrderResponse).order.id).toBe(original?.id);
+
+    const [skuRow] = await dbClient.db
+      .select({ available: product.availableStock, reserved: product.reservedStock })
+      .from(product)
+      .where(eq(product.sku, 'SKU-TIMEOUT'));
+    expect(skuRow).toEqual({ available: 1, reserved: 2 });
+    const [orders] = await dbClient.db.select({ total: count() }).from(reservationOrder);
+    expect(orders?.total).toBe(1);
     await assertInventoryInvariants(dbClient.db);
   });
 });

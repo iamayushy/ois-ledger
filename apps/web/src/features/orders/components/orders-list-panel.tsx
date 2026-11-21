@@ -3,6 +3,10 @@ import { MagnifyingGlassIcon } from '@phosphor-icons/react/dist/csr/MagnifyingGl
 import { XIcon } from '@phosphor-icons/react/dist/csr/X';
 import { useState, useTransition, type FormEvent } from 'react';
 import { lookupOrderByIdentifier, type StatusFilter } from '../../../api/orders';
+import { useRejections } from '../../../api/rejections';
+import { RejectionList } from '../../../components/shared/rejection-list';
+import { ERROR_CODE } from '@ois/shared/schemas';
+import { isValidUuid } from '@ois/shared/uuidv7';
 import { GhostButton } from '../../../components/shared/button';
 import { useWorkbenchActions, useWorkbenchData, useWorkbenchNavigation, useWorkbenchSearch } from '../../../context/workbench-context';
 import { OrderRow } from './order-row';
@@ -13,6 +17,23 @@ const STATUS_TABS: readonly { readonly value: StatusFilter; readonly label: stri
   { value: 'CANCELLED', label: 'Cancelled' },
 ];
 
+function KeyRejections({ idempotencyKey }: { readonly idempotencyKey: string }) {
+  const { data, error } = useRejections({ idempotencyKey });
+  return (
+    <div className="border-t border-border px-5 py-2">
+      <div className="text-[13px] font-medium text-fg-strong">Rejected attempts with this key</div>
+      {error ? (
+        <p className="m-0 text-[13px] text-danger">Failed to load rejected attempts: {error.message}</p>
+      ) : (
+        <RejectionList
+          rejections={data?.rejections ?? []}
+          emptyText={data ? 'No attempts were recorded for this key.' : 'Loading…'}
+        />
+      )}
+    </div>
+  );
+}
+
 export function OrdersToolbar() {
   const state = useWorkbenchSearch();
   const actions = useWorkbenchActions();
@@ -21,11 +42,13 @@ export function OrdersToolbar() {
     readonly tone: 'error' | 'info';
     readonly text: string;
   } | null>(null);
+  const [missingKey, setMissingKey] = useState<string | null>(null);
 
   function handleExactLookup(event: FormEvent) {
     event.preventDefault();
     const query = state.searchInput.trim();
     setLookupNotice(null);
+    setMissingKey(null);
     if (!query) {
       return;
     }
@@ -42,6 +65,9 @@ export function OrdersToolbar() {
           return;
         }
         setLookupNotice({ tone: 'error', text: `[${result.error.code}] ${result.error.message}` });
+        setMissingKey(
+          result.error.code === ERROR_CODE.ORDER_NOT_FOUND && !isValidUuid(query) ? query : null,
+        );
       });
     });
   }
@@ -62,6 +88,9 @@ export function OrdersToolbar() {
               if (lookupNotice) {
                 setLookupNotice(null);
               }
+              if (missingKey) {
+                setMissingKey(null);
+              }
             }}
             aria-label="Search orders"
             placeholder="Order ID, customer or request key…"
@@ -78,6 +107,7 @@ export function OrdersToolbar() {
                 onClick={() => {
                   actions.clearSearch();
                   setLookupNotice(null);
+                  setMissingKey(null);
                 }}
                 className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-fg-muted hover:bg-bg-hover hover:text-fg-strong"
               >
@@ -141,6 +171,7 @@ export function OrdersToolbar() {
           </button>
         </div>
       ) : null}
+      {missingKey ? <KeyRejections idempotencyKey={missingKey} /> : null}
     </div>
   );
 }

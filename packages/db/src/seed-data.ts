@@ -348,6 +348,6 @@ export async function seedDatabase(db: OisDatabase): Promise<SeedResult> {
 
 export async function truncateAllTables(db: OisDatabase): Promise<void> {
   await db.execute(
-    sql`TRUNCATE TABLE inventory_ledger, idempotency_key, order_item, reservation_order, product RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE TABLE reservation_rejection, inventory_ledger, idempotency_key, order_item, reservation_order, product RESTART IDENTITY CASCADE`,
   );
 }

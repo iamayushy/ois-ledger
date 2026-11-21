@@ -223,3 +223,41 @@ export const ErrorResponseSchema = Type.Object({
   }),
 });
 export type ErrorResponse = Static<typeof ErrorResponseSchema>;
+
+export const RejectionReasonSchema = Type.Union([
+  Type.Literal('UNKNOWN_SKU'),
+  Type.Literal('INSUFFICIENT_STOCK'),
+  Type.Literal('IDEMPOTENCY_CONFLICT'),
+]);
+export type RejectionReason = Static<typeof RejectionReasonSchema>;
+
+export const RejectionDtoSchema = Type.Object({
+  id: Type.String(),
+  idempotencyKey: Type.String(),
+  customerId: Type.String(),
+  requestHash: Type.String(),
+  errorCode: Type.Integer({ minimum: 1000 }),
+  reason: RejectionReasonSchema,
+  items: Type.Array(OrderItemInputSchema),
+  shortages: Type.Array(StockShortageDtoSchema),
+  missingSkus: Type.Array(Type.String()),
+  createdAt: Type.String(),
+});
+export type RejectionDto = Static<typeof RejectionDtoSchema>;
+
+export const ListRejectionsQuerySchema = Type.Object(
+  {
+    sku: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+    idempotencyKey: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+    cursor: Type.Optional(Type.String({ pattern: '^[0-9]{1,19}$' })),
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+  },
+  { additionalProperties: false },
+);
+export type ListRejectionsQuery = Static<typeof ListRejectionsQuerySchema>;
+
+export const ListRejectionsResponseSchema = Type.Object({
+  rejections: Type.Array(RejectionDtoSchema),
+  nextCursor: Type.Union([Type.String(), Type.Null()]),
+});
+export type ListRejectionsResponse = Static<typeof ListRejectionsResponseSchema>;

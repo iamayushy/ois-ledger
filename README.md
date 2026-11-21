@@ -6,6 +6,9 @@ A single service on PostgreSQL that reserves limited stock **all-or-nothing**. I
 - **Operator UI:** React 19 + Vite + SWR (`apps/web`), port `5173`.
 - **Database:** PostgreSQL 16 through Drizzle ORM (`packages/db`), with SQL migrations and a synthetic seed.
 - **Shared code:** TypeBox schemas, numeric error codes, canonical request hashing and UUIDv7 (`packages/shared`).
+- **Edge proxy:** a Cloudflare Worker (`apps/api-proxy`) that serves the API on its own domain.
+
+**Live:** operator UI at https://order.atlair.cloud · API at https://ois.atlair.cloud (Swagger: https://ois.atlair.cloud/docs). The Cloud Run origin only accepts requests that come through the proxy.
 
 ---
 
@@ -89,16 +92,16 @@ To run it manually, outside a trigger: `gcloud builds submit --config=cloudbuild
 
 ### Seed data
 
-| SKU | Total stock | Purpose |
-|---|---|---|
-| `SKU-GPU-5090` | **1** | The "last unit" race |
-| `SKU-KB-75` | 3 | Low stock |
-| `SKU-MON-4K` | 10 | Multi-item orders |
-| `SKU-MOUSE-PRO` | 25 | Plentiful stock |
-| `SKU-DOCK-TB4` | 5 | Cancellation demo |
-| `SKU-CABLE-USB4` | **0** | Always out of stock, for all-or-nothing failures |
+26 synthetic products (electronics, priced in INR paise), 185 units in total. They include a few edge cases for trying the paths in the brief by hand:
 
-The seed also creates two orders, keyed `seed-order-active-001` (RESERVED) and `seed-order-cancelled-002` (CANCELLED), along with their ledger history.
+| Case | SKUs |
+|---|---|
+| **Last unit** (race for it) | `SKU-GPU-5090`, `SKU-PHONE-S25`, `SKU-WATCH-U2`, `SKU-CHAIR-AERON`, `SKU-CONSOLE-PS5` |
+| **Out of stock** (all-or-nothing failures) | `SKU-CABLE-USB4`, `SKU-UPS-1500` |
+| Low stock | `SKU-KB-75`, `SKU-LAPTOP-M4`, `SKU-NAS-4BAY`, `SKU-CPU-9950` |
+| Plentiful | `SKU-MOUSE-PRO`, `SKU-CAM-4K`, `SKU-BUDS-PRO`, `SKU-HDD-20TB`, … |
+
+The seed also creates two orders, keyed `seed-order-active-001` (RESERVED, holding 3 units) and `seed-order-cancelled-002` (CANCELLED), along with their ledger history. `pnpm db:seed` does nothing if products already exist; `pnpm db:reset` truncates every table and seeds again.
 
 ### Configuration (`.env`)
 
@@ -127,6 +130,7 @@ Base URL: `http://localhost:3001/api`. Every route validates its input and seria
 | `POST` | `/orders/:id/cancel` | Cancel idempotently and release reserved stock exactly once |
 | `GET` | `/inventory` | All SKUs with total, available and reserved stock |
 | `GET` | `/inventory/:sku` | One SKU plus its recent ledger entries (`?limit=`) |
+| `GET` | `/rejections` | Rejected reservation attempts, newest first. Filters: `sku`, `idempotencyKey`; `limit` ≤ 100 and `cursor` |
 | `GET` | `/health` | Database latency and pool statistics |
 
 ### Create an order
@@ -205,6 +209,23 @@ curl -s -X POST http://localhost:3001/api/orders/<orderId>/cancel
 - The first cancel returns `{"order": {..."status":"CANCELLED"...}, "alreadyCancelled": false}`.
 - Every repeat, including simultaneous ones, returns `200` with `"alreadyCancelled": true` and releases nothing further.
 
+### Investigate rejected attempts
+
+A request that loses a last-unit race, asks for an unknown SKU, or reuses a key with a different payload leaves no order. It is recorded in `reservation_rejection` instead, so an operator can see who lost and why:
+
+```bash
+curl -s 'http://localhost:3001/api/rejections?sku=SKU-GPU-5090&limit=20'
+curl -s 'http://localhost:3001/api/rejections?idempotencyKey=checkout-9b11'
+```
+```json
+{ "rejections": [ { "id": "42", "idempotencyKey": "checkout-9b11", "customerId": "cust-7", "requestHash": "…",
+    "errorCode": 1201, "reason": "INSUFFICIENT_STOCK",
+    "items": [ { "sku": "SKU-CABLE-USB4", "quantity": 1 }, { "sku": "SKU-KB-75", "quantity": 1 } ],
+    "shortages": [ { "sku": "SKU-CABLE-USB4", "requested": 1, "available": 0 } ], "missingSkus": [],
+    "createdAt": "…" } ],
+  "nextCursor": null }
+```
+
 ### Inspect stock
 
 ```bash
@@ -230,6 +251,7 @@ Every error has the form `{ "error": { "code": <number>, "message": string, "det
 | 1002 | 400 | Invalid order payload |
 | 1003 | 400 | Duplicate SKU in one request |
 | 1004 | 400 | Malformed cursor |
+| 1005 | 401 | Request did not come through the API gateway (only when `PROXY_SHARED_SECRET` is set) |
 | 1100 / 1101 / 1102 / 1103 | 404 | Route / product / SKU in order / order not found |
 | 1201 | 409 | Insufficient stock (`details.shortages`) |
 | 1202 | 409 | Idempotency key reused with a different payload |
@@ -286,6 +308,15 @@ Idempotency relies on the **primary-key index of `idempotency_key`**, not on app
 - **Failed reservations are not remembered.** A `1201`/`1102` rolls back the key claim, so retrying the same key later runs the request again and may succeed if stock was freed. No order existed, so this cannot create a duplicate.
 - **A second safety net:** `reservation_order.idempotency_key` is `UNIQUE`.
 
+### Rejected attempts are recorded outside the transaction
+
+When a reservation fails with `1102`, `1201` or `1202`, the transaction rolls back first. Only then does the route write one row to `reservation_rejection`, holding the key, customer, request hash, requested items, and the shortages or missing SKUs. This is a single insert in its own implicit transaction, so it:
+- takes no product locks, and so can't affect lock ordering or extend lock hold time;
+- can never leave a partial reservation behind;
+- if it fails, is only logged, and the client still gets the original error.
+
+The losing side of every race can therefore be investigated (`GET /api/rejections`, and the SKU inspector in the UI), even though by design it wrote nothing to the order tables.
+
 ### Cancel exactly once
 
 Cancel runs as follows:
@@ -323,14 +354,19 @@ Every test also checks the same invariants:
 
 | Spec case | Test (`apps/api/tests/`) |
 |---|---|
-| Distinct requests compete for the last unit | `concurrency.test.ts`, **Proof 1**: 20 simultaneous requests with different keys → exactly 1×`201`, 19×`409/1201`, stock `0/1`, 1 order |
-| Overlapping retries with the same key and payload | **Proof 2**: 10 simultaneous requests with the same key, plus one retry after commit → 1×`201`, 10×`200` replays of the same order id, stock decremented once |
-| Failed multi-item reservation | **Proof 4**: one short SKU in a multi-item order → `409`, zero orders, items, ledger rows or keys, and stock unchanged |
-| Key reused with a different payload | **Proof 3**: sequential and concurrent → `409/1202`, no state change |
+| Distinct requests compete for the last unit | `concurrency.test.ts`, **Proof 1**: 20 simultaneous requests with different keys → exactly 1×`201`, 19×`409/1201`, stock `0/1`, 1 order. All 19 losers appear in `GET /api/rejections?sku=…` with their shortage. |
+| Overlapping retries with the same key and payload | **Proof 7** (deterministic): the test holds the product row lock, so request A claims the key and blocks. 9 retries then block on A's uncommitted key, and the test waits until Postgres shows all 10 waiting before releasing. Result: 1×`201`, 9×`200` replays of the same order, stock decremented once. **Proof 2** adds 10 simultaneous requests (with SKUs in different orders) plus a retry after commit. |
+| "Request times out and is retried" | **Proof 8**: the client aborts A while it is in flight, the server still commits, and the retry returns `200` with the original order. 1 order, stock decremented once. |
+| Failed multi-item reservation | **Proof 4**: one short SKU in a multi-item order → `409`, zero orders, items, ledger rows or keys, stock unchanged, and exactly one rejection row with the shortage. |
+| Key reused with a different payload | **Proof 3**: sequential and concurrent → `409/1202`, no state change, and every conflict is recorded. |
 | Deadlock resistance | **Proof 5**: 20 alternating `[A,B]` / `[B,A]` orders → 0 deadlocks |
 | Repeated cancellation | **Proof 6**: 10 simultaneous cancels → stock released exactly once |
 | Replay returns the original response | `api.contract.test.ts`: create → cancel → retry returns the original `RESERVED` body; the order stays `CANCELLED` |
+| Rejection log API | `api.contract.test.ts`: filters by SKU and key, cursor pagination, and `400` for a bad `limit` or `cursor` |
 | Pool exhaustion and backpressure | `pool-pressure.test.ts`: pool timeout → `503/1301`, and a retry with the same key creates exactly one order; full wait queue → `503/1302` with no key claimed |
+| Gateway-only access | `proxy-auth.test.ts`: missing, wrong (including different-length) and correct secret; unknown routes are also gated; no gate when the secret isn't configured |
+
+22 API tests (8 concurrency proofs) and 5 shared-package tests.
 
 ```bash
 pnpm test
@@ -342,6 +378,7 @@ cd apps/api && npx vitest run tests/concurrency.test.ts --reporter=verbose
 - Concurrency test run: [`artifacts/tests/concurrency-test-output.txt`](artifacts/tests/concurrency-test-output.txt)
 - Operator UI, order lookup & retry investigation: [`artifacts/ui/order-lookup-by-key.png`](artifacts/ui/order-lookup-by-key.png) and [`artifacts/ui/order-retry-investigation.png`](artifacts/ui/order-retry-investigation.png)
 - Operator UI, inventory view: [`artifacts/ui/inventory-atlair-light.png`](artifacts/ui/inventory-atlair-light.png) and [`artifacts/ui/inventory-atlair-dark.png`](artifacts/ui/inventory-atlair-dark.png)
+- Operator UI, last-unit race investigation: [`artifacts/ui/sku-race-rejections.png`](artifacts/ui/sku-race-rejections.png) (the SKU inspector lists every losing request) and [`artifacts/ui/key-lookup-rejected-attempt.png`](artifacts/ui/key-lookup-rejected-attempt.png) (a losing buyer's key has no order, and the console shows why)
 
 ### Operator UI
 
@@ -349,6 +386,7 @@ The console at http://localhost:5173 lets an operator:
 - Look up an order by order ID or `Idempotency-Key`, and see its status, items, request hash and full ledger trail.
 - Browse and filter orders.
 - See total, available and reserved stock for every SKU, plus that SKU's ledger.
+- See the **rejected attempts** for a SKU (who lost a race, what they asked for, what was left), and for any key that has no order.
 - Fire reservations with a chosen key, to reproduce races and retries by hand.
 
 ---
@@ -373,8 +411,9 @@ The console at http://localhost:5173 lets an operator:
 - Partition `inventory_ledger` by month, and keep `response_body` small (or store a pointer instead) to limit TOAST growth.
 - Add reservation expiry (holds that auto-release after N minutes) and a confirm/fulfil state.
 
+- Add retention for `reservation_rejection` (it grows with every failed attempt), for example a daily purge of rows older than 30 days.
+
 **Testing**
-- Make the overlap in Proof 2 deterministic: hold the first transaction open, for example with an advisory lock or `pg_sleep`, so the retries are guaranteed to arrive while it is in flight.
-- Add a "client timed out, server committed, client retried" test, and a cancel-vs-create race on the same SKU.
+- Add a cancel-vs-create race on the same SKU.
 - Kill the API process mid-transaction in CI to prove there are no orphaned keys.
 - Load-test with k6 to find the pool, lock-timeout and `PG_POOL_MAX_WAITING` settings for the target traffic.
