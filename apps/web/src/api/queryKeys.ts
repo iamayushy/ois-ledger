@@ -9,12 +9,6 @@ export interface OrdersListQueryParams {
   readonly limit?: number | undefined;
 }
 
-export interface RejectionsQueryParams {
-  readonly sku?: string | undefined;
-  readonly idempotencyKey?: string | undefined;
-  readonly limit?: number | undefined;
-}
-
 export const oisKeys = {
   health: {
     status: () => '/api/health' as const,
@@ -24,16 +18,6 @@ export const oisKeys = {
     detail: (sku: string, limit = 50) => {
       const qs = buildQueryString({ limit });
       return `/api/inventory/${encodeURIComponent(sku)}${qs ? `?${qs}` : ''}`;
-    },
-  },
-  rejections: {
-    list: (params: RejectionsQueryParams) => {
-      const qs = buildQueryString({
-        sku: params.sku,
-        idempotencyKey: params.idempotencyKey,
-        limit: params.limit ?? 20,
-      });
-      return `/api/rejections${qs ? `?${qs}` : ''}`;
     },
   },
   orders: {

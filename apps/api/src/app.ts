@@ -14,7 +14,6 @@ import { swaggerPlugin } from './plugins/swagger.js';
 import { healthRoutes } from './routes/health.js';
 import { inventoryRoutes } from './routes/inventory.js';
 import { orderRoutes } from './routes/orders.js';
-import { rejectionRoutes } from './routes/rejections.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -116,7 +115,6 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
         bound.addHook('onRequest', poolBackpressureHook);
         await bound.register(inventoryRoutes);
         await bound.register(orderRoutes);
-        await bound.register(rejectionRoutes);
       });
     },
     { prefix: '/api' },

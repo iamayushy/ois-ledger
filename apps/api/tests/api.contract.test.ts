@@ -7,7 +7,6 @@ import {
   type CreateOrderResponse,
   type ErrorResponse,
   type HealthResponse,
-  type ListRejectionsResponse,
   type ListOrdersResponse,
   type OrderDetailDto,
   type ProductDetailDto,
@@ -368,46 +367,6 @@ describe('API Contract & Error Envelope', () => {
       await app.inject({ method: 'GET', url: '/api/orders?sku=SKU-B' })
     ).json<ListOrdersResponse>();
     expect(bySku.orders).toHaveLength(0);
-
-    await assertInventoryInvariants(dbClient.db);
-  });
-
-  it('records rejected attempts and serves them with filters, validation and cursor pagination', async () => {
-    for (const [key, sku, quantity] of [
-      ['rej-key-1', 'SKU-C', 1],
-      ['rej-key-2', 'SKU-B', 9],
-      ['rej-key-3', 'SKU-NOPE', 1],
-    ] as const) {
-      const res = await app.inject({
-        method: 'POST',
-        url: '/api/orders',
-        headers: { 'idempotency-key': key },
-        payload: { customerId: 'cust-rej', items: [{ sku, quantity }] },
-      });
-      expect([404, 409]).toContain(res.statusCode);
-    }
-
-    const page1 = (await app.inject({ method: 'GET', url: '/api/rejections?limit=2' })).json<ListRejectionsResponse>();
-    expect(page1.rejections.map((r) => r.idempotencyKey)).toEqual(['rej-key-3', 'rej-key-2']);
-    expect(page1.rejections[0]?.reason).toBe('UNKNOWN_SKU');
-    expect(page1.rejections[0]?.missingSkus).toEqual(['SKU-NOPE']);
-    expect(page1.nextCursor).not.toBeNull();
-
-    const page2 = (
-      await app.inject({ method: 'GET', url: `/api/rejections?limit=2&cursor=${page1.nextCursor ?? ''}` })
-    ).json<ListRejectionsResponse>();
-    expect(page2.rejections.map((r) => r.idempotencyKey)).toEqual(['rej-key-1']);
-    expect(page2.nextCursor).toBeNull();
-
-    const bySku = (await app.inject({ method: 'GET', url: '/api/rejections?sku=SKU-B' })).json<ListRejectionsResponse>();
-    expect(bySku.rejections).toHaveLength(1);
-    expect(bySku.rejections[0]?.shortages).toEqual([{ sku: 'SKU-B', requested: 9, available: 3 }]);
-
-    const tooMany = await app.inject({ method: 'GET', url: '/api/rejections?limit=101' });
-    expect(tooMany.statusCode).toBe(400);
-    assertCleanErrorBody(tooMany.json(), ERROR_CODE.VALIDATION_FAILED);
-    const badCursor = await app.inject({ method: 'GET', url: '/api/rejections?cursor=abc' });
-    expect(badCursor.statusCode).toBe(400);
 
     await assertInventoryInvariants(dbClient.db);
   });

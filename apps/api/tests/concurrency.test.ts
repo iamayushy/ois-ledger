@@ -9,7 +9,6 @@ import {
   orderItem,
   product,
   reservationOrder,
-  reservationRejection,
 } from '@ois/db/schema';
 import {
   ERROR_CODE,
@@ -17,7 +16,6 @@ import {
   type CreateOrderBody,
   type CreateOrderResponse,
   type ErrorResponse,
-  type ListRejectionsResponse,
 } from '@ois/shared/schemas';
 import { buildApp } from '../src/app.js';
 import {
@@ -101,14 +99,6 @@ async function releaseProductRowLock(holder: PoolClient): Promise<void> {
   holder.release();
 }
 
-async function listRejectionsOverHttp(
-  baseUrl: string,
-  query: string,
-): Promise<ListRejectionsResponse> {
-  const response = await fetch(`${baseUrl}/api/rejections?${query}`);
-  expect(response.status).toBe(200);
-  return (await response.json()) as ListRejectionsResponse;
-}
 
 describe('Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs', () => {
   let dbClient: DbClient;
@@ -176,15 +166,6 @@ describe('Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs', () => {
 
     const [orderCount] = await dbClient.db.select({ total: count() }).from(reservationOrder);
     expect(orderCount?.total).toBe(1);
-
-    const losers = await listRejectionsOverHttp(baseUrl, 'sku=SKU-LAST-UNIT&limit=100');
-    expect(losers.rejections).toHaveLength(concurrency - 1);
-    expect(new Set(losers.rejections.map((r) => r.idempotencyKey)).size).toBe(concurrency - 1);
-    for (const rejection of losers.rejections) {
-      expect(rejection.reason).toBe('INSUFFICIENT_STOCK');
-      expect(rejection.errorCode).toBe(ERROR_CODE.INSUFFICIENT_STOCK);
-      expect(rejection.shortages).toEqual([{ sku: 'SKU-LAST-UNIT', requested: 1, available: 0 }]);
-    }
 
     await assertInventoryInvariants(dbClient.db);
   });
@@ -339,12 +320,6 @@ describe('Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs', () => {
       reserved: 1 + winningQty,
     });
 
-    const conflictLog = await dbClient.db
-      .select({ key: reservationRejection.idempotencyKey, code: reservationRejection.errorCode })
-      .from(reservationRejection);
-    expect(conflictLog).toHaveLength(2 + raceConflicts.length);
-    expect(conflictLog.every((row) => row.code === ERROR_CODE.IDEMPOTENCY_CONFLICT)).toBe(true);
-
     await assertInventoryInvariants(dbClient.db);
   });
 
@@ -396,19 +371,6 @@ describe('Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs', () => {
     expect(itemsCount?.total).toBe(0);
     expect(keysCount?.total).toBe(0);
     expect(reserveLedgerCount?.total).toBe(0);
-
-    const failedAttempt = await listRejectionsOverHttp(baseUrl, 'idempotencyKey=atomic-fail-key-001');
-    expect(failedAttempt.rejections).toHaveLength(1);
-    expect(failedAttempt.rejections[0]).toMatchObject({
-      reason: 'INSUFFICIENT_STOCK',
-      customerId: 'cust-atomic',
-      items: [
-        { sku: 'SKU-A', quantity: 2 },
-        { sku: 'SKU-B', quantity: 3 },
-        { sku: 'SKU-C', quantity: 4 },
-      ],
-      shortages: [{ sku: 'SKU-B', requested: 3, available: 1 }],
-    });
 
     await assertInventoryInvariants(dbClient.db);
   });

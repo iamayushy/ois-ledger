@@ -56,7 +56,7 @@ export function createTestDbClient(max = 25): DbClient {
 
 export async function resetTestDb(db: OisDatabase): Promise<void> {
   await db.execute(
-    sql`TRUNCATE TABLE reservation_rejection, inventory_ledger, order_item, idempotency_key, reservation_order, product RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE TABLE inventory_ledger, order_item, idempotency_key, reservation_order, product RESTART IDENTITY CASCADE`,
   );
 }
 

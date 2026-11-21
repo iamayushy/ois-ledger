@@ -1,17 +1,17 @@
 
  RUN  v3.2.7 /Users/ayush/ois/apps/api
 
- ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 1 (Competing for the Last Unit): 20 simultaneous distinct-key requests yield exactly 1 order and 0 negative stock 154ms
- ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 2 (Overlapping Retries): 10 simultaneous identical-key requests + 1 post-commit retry return the same order and decrement stock once 64ms
- ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 3 (Key Reuse Conflict): reusing an Idempotency-Key with a different payload returns 409 (1202) sequentially and concurrently without mutating state 63ms
- ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 4 (All-or-Nothing Multi-Item Failure): shortage on one SKU leaves zero items reserved, zero orders, and zero ledger writes 59ms
- ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 5 (Reverse-Order Multi-Item Deadlock Resistance): 20 alternating [A,B] vs [B,A] concurrent requests complete with 0 deadlocks and exact conservation 145ms
- ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 6 (Concurrent Repeated Cancellation): 10 simultaneous cancel requests release reserved stock exactly once 79ms
- ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 7 (Forced In-Flight Overlap): retries provably arrive while the first attempt holds the key uncommitted, then all replay the single order 92ms
- ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 8 (Client Timeout Then Retry): the client gives up mid-flight, the server still commits, and the retry returns the original order without a second reservation 92ms
+ ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 1 (Competing for the Last Unit): 20 simultaneous distinct-key requests yield exactly 1 order and 0 negative stock 98ms
+ ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 2 (Overlapping Retries): 10 simultaneous identical-key requests + 1 post-commit retry return the same order and decrement stock once 37ms
+ ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 3 (Key Reuse Conflict): reusing an Idempotency-Key with a different payload returns 409 (1202) sequentially and concurrently without mutating state 35ms
+ ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 4 (All-or-Nothing Multi-Item Failure): shortage on one SKU leaves zero items reserved, zero orders, and zero ledger writes 31ms
+ ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 5 (Reverse-Order Multi-Item Deadlock Resistance): 20 alternating [A,B] vs [B,A] concurrent requests complete with 0 deadlocks and exact conservation 63ms
+ ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 6 (Concurrent Repeated Cancellation): 10 simultaneous cancel requests release reserved stock exactly once 47ms
+ ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 7 (Forced In-Flight Overlap): retries provably arrive while the first attempt holds the key uncommitted, then all replay the single order 90ms
+ ✓ tests/concurrency.test.ts > Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs > Proof 8 (Client Timeout Then Retry): the client gives up mid-flight, the server still commits, and the retry returns the original order without a second reservation 84ms
 
  Test Files  1 passed (1)
       Tests  8 passed (8)
-   Start at  02:06:38
-   Duration  1.39s (transform 76ms, setup 0ms, collect 414ms, tests 842ms, environment 0ms, prepare 32ms)
+   Start at  02:13:29
+   Duration  1.02s (transform 64ms, setup 0ms, collect 348ms, tests 566ms, environment 0ms, prepare 31ms)
 

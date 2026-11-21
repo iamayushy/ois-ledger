@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import {
+  ERROR_CODE,
   CancelOrderResponseSchema,
   CreateOrderBodySchema,
   CreateOrderHeadersSchema,
@@ -18,7 +19,13 @@ import {
   getOrderDetailByIdempotencyKey,
   listOrders,
 } from '../services/order-service.js';
-import { recordRejectionIfApplicable } from '../services/rejection-service.js';
+import { isAppError } from '../errors.js';
+
+const REJECTION_CODES: ReadonlySet<number> = new Set([
+  ERROR_CODE.UNKNOWN_SKU,
+  ERROR_CODE.INSUFFICIENT_STOCK,
+  ERROR_CODE.IDEMPOTENCY_CONFLICT,
+]);
 
 export const orderRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.post(
@@ -43,14 +50,21 @@ export const orderRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
     async (request, reply) => {
       const idempotencyKeyHeader = request.headers['idempotency-key'];
       const result = await createOrder(fastify.db, idempotencyKeyHeader, request.body).catch(
-        async (error: unknown) => {
-          await recordRejectionIfApplicable(
-            fastify.db,
-            request.log,
-            idempotencyKeyHeader,
-            request.body,
-            error,
-          );
+        (error: unknown) => {
+          if (isAppError(error) && REJECTION_CODES.has(error.code)) {
+            request.log.info(
+              {
+                event: 'reservation.rejected',
+                idempotencyKey: idempotencyKeyHeader,
+                customerId: request.body.customerId,
+                errorCode: error.code,
+                skus: request.body.items.map((item) => item.sku),
+                shortages: error.details?.shortages,
+                missingSkus: error.details?.missingSkus,
+              },
+              'Reservation rejected',
+            );
+          }
           throw error;
         },
       );
