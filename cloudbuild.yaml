@@ -1,7 +1,7 @@
 substitutions:
   _REGION: asia-south2
   _AR_REPO: ois
-  _SERVICE: ois-api
+  _SERVICE: ois-ledger
   _MIGRATE_JOB: ois-migrate
   _DB_SECRET: ois-database-url
   _CORS_ORIGIN: http://localhost:5173
