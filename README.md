@@ -53,7 +53,38 @@ The root `Dockerfile` builds the API in several stages on `node:24-alpine`. It u
 | `prod-deps` | A separate `pnpm install --prod --frozen-lockfile --offline --filter @ois/api`, reusing the pnpm store from `base`. Versions come exactly from the lockfile, and no web or dev packages are installed. The bundles import `@sinclair/typebox`, `uuid` and `dotenv` directly, so `@ois/api` declares them as its own dependencies. |
 | `runtime` | `node:24-alpine` plus `tini` as PID 1. Runs as the non-root `node` user, has no npm, Corepack, Yarn or pnpm, and has a `HEALTHCHECK` on `/api/health`. The bundles, `node_modules` and SQL migrations are copied in. |
 
-Build the image on its own with `docker build -t ois-api .` from the repo root. The build context must be the repo root because the image needs the lockfile and the workspace packages. On Cloud Build or Cloud Run, set the Dockerfile location to `/Dockerfile`.
+Build the image on its own with `docker build -t ois-api .` from the repo root. The build context must be the repo root because the image needs the lockfile and the workspace packages.
+
+### Deploy to Cloud Run
+
+`cloudbuild.yaml` runs four steps: **build** the image (tagged with `$COMMIT_SHA`) → **push** it to Artifact Registry → **migrate** by updating and running the `ois-migrate` Cloud Run job and waiting for it to finish → **deploy** the `ois-api` service. If the migration fails, the build stops before the new revision is deployed.
+
+One-time setup:
+
+```bash
+gcloud artifacts repositories create ois --repository-format=docker --location=asia-south2
+printf '%s' 'postgres://USER:PASSWORD@HOST:5432/ois' | gcloud secrets create ois-database-url --data-file=-
+```
+
+The Cloud Build service account needs these roles:
+- Cloud Run Admin
+- Service Account User
+- Artifact Registry Writer
+- Logs Writer
+
+The Cloud Run runtime service account needs Secret Manager Secret Accessor on `ois-database-url`.
+
+Create a Cloud Build trigger on `main` with **Configuration: Cloud Build configuration file** at `/cloudbuild.yaml`. Override substitutions in the trigger as needed:
+
+| Substitution | Default | Purpose |
+|---|---|---|
+| `_REGION` | `asia-south2` (Delhi) | Region for Artifact Registry and Cloud Run |
+| `_AR_REPO` / `_SERVICE` / `_MIGRATE_JOB` | `ois` / `ois-api` / `ois-migrate` | Resource names |
+| `_DB_SECRET` | `ois-database-url` | Secret Manager secret holding `DATABASE_URL` |
+| `_CORS_ORIGIN` | `http://localhost:5173` | Set to the web app's URL (for example your `workers.dev` domain) |
+| `_MAX_INSTANCES` × `_PG_POOL_MAX` | `4` × `20` | Maximum Postgres connections (80). Keep this below `max_connections`, with room left for the migration job. |
+
+To run it manually, outside a trigger: `gcloud builds submit --config=cloudbuild.yaml --substitutions=COMMIT_SHA=$(git rev-parse HEAD)`.
 
 ### Seed data
 
