@@ -86,6 +86,7 @@ Create a Cloud Build trigger on `main` with **Configuration: Cloud Build configu
 | `_DB_SECRET` | `ois_db_url` | Secret Manager secret holding `DATABASE_URL` |
 | `_PROXY_SECRET` | `ois_proxy_secret` | Shared secret the Cloudflare Worker (`apps/api-proxy`) sends as `x-proxy-secret`. When `PROXY_SHARED_SECRET` is set, the API rejects any request without it (`401`, code `1005`), so `https://ois.atlair.cloud` is the only working way in. The same value must be stored as the Worker secret `PROXY_SHARED_SECRET`. |
 | `_CORS_ORIGIN` | `https://order.atlair.cloud` | Origin of the web app allowed by CORS |
+| `_MIN_INSTANCES` | `1` | One warm instance at all times, plus `--cpu-boost` for faster cold starts. The k6 Tatkal test showed that cold scale-out was most of the wait. |
 | `_MAX_INSTANCES` × `_PG_POOL_MAX` | `4` × `10` | Maximum client connections to the Supabase pooler (40). Keep this below the database's connection limit. |
 
 To run it manually, outside a trigger: `gcloud builds submit --config=cloudbuild.yaml --substitutions=COMMIT_SHA=$(git rev-parse HEAD)`.
