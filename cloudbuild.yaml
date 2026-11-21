@@ -3,7 +3,7 @@ substitutions:
   _AR_REPO: ois
   _SERVICE: ois-ledger
   _MIGRATE_JOB: ois-migrate
-  _DB_SECRET: ois-database-url
+  _DB_SECRET: ois_db_url
   _CORS_ORIGIN: http://localhost:5173
   _MAX_INSTANCES: "4"
   _PG_POOL_MAX: "20"

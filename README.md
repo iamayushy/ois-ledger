@@ -63,7 +63,7 @@ One-time setup:
 
 ```bash
 gcloud artifacts repositories create ois --repository-format=docker --location=asia-south2
-printf '%s' 'postgres://USER:PASSWORD@HOST:5432/ois' | gcloud secrets create ois-database-url --data-file=-
+printf '%s' 'postgres://USER:PASSWORD@HOST:5432/ois' | gcloud secrets create ois_db_url --data-file=-
 ```
 
 The Cloud Build service account needs these roles:
@@ -72,7 +72,7 @@ The Cloud Build service account needs these roles:
 - Artifact Registry Writer
 - Logs Writer
 
-The Cloud Run runtime service account needs Secret Manager Secret Accessor on `ois-database-url`.
+The Cloud Run runtime service account needs Secret Manager Secret Accessor on `ois_db_url`.
 
 Create a Cloud Build trigger on `main` with **Configuration: Cloud Build configuration file** at `/cloudbuild.yaml`. Override substitutions in the trigger as needed:
 
@@ -80,7 +80,7 @@ Create a Cloud Build trigger on `main` with **Configuration: Cloud Build configu
 |---|---|---|
 | `_REGION` | `asia-south2` (Delhi) | Region for Artifact Registry and Cloud Run |
 | `_AR_REPO` / `_SERVICE` / `_MIGRATE_JOB` | `ois` / `ois-ledger` / `ois-migrate` | Resource names |
-| `_DB_SECRET` | `ois-database-url` | Secret Manager secret holding `DATABASE_URL` |
+| `_DB_SECRET` | `ois_db_url` | Secret Manager secret holding `DATABASE_URL` |
 | `_CORS_ORIGIN` | `http://localhost:5173` | Set to the web app's URL (for example your `workers.dev` domain) |
 | `_MAX_INSTANCES` × `_PG_POOL_MAX` | `4` × `20` | Maximum Postgres connections (80). Keep this below `max_connections`, with room left for the migration job. |
 
