@@ -57,7 +57,7 @@ Build the image on its own with `docker build -t ois-api .` from the repo root. 
 
 ### Deploy to Cloud Run
 
-`cloudbuild.yaml` runs four steps: **build** the image (tagged with `$COMMIT_SHA`) → **push** it to Artifact Registry → **migrate** by updating and running the `ois-migrate` Cloud Run job and waiting for it to finish → **deploy** the `ois-ledger` service. If the migration fails, the build stops before the new revision is deployed.
+`cloudbuild.yaml` runs three steps: **build** the image (tagged with `$COMMIT_SHA`) → **push** it to Artifact Registry → **deploy** the `ois-ledger` service. Migrations are not run by the pipeline: apply `packages/db/drizzle/*.sql` to the database yourself, in order (for example in the Supabase SQL editor), before deploying a change that needs them.
 
 One-time setup:
 
@@ -79,10 +79,10 @@ Create a Cloud Build trigger on `main` with **Configuration: Cloud Build configu
 | Substitution | Default | Purpose |
 |---|---|---|
 | `_REGION` | `asia-south2` (Delhi) | Region for Artifact Registry and Cloud Run |
-| `_AR_REPO` / `_SERVICE` / `_MIGRATE_JOB` | `ois` / `ois-ledger` / `ois-migrate` | Resource names |
+| `_AR_REPO` / `_SERVICE` | `ois` / `ois-ledger` | Resource names |
 | `_DB_SECRET` | `ois_db_url` | Secret Manager secret holding `DATABASE_URL` |
 | `_CORS_ORIGIN` | `http://localhost:5173` | Set to the web app's URL (for example your `workers.dev` domain) |
-| `_MAX_INSTANCES` × `_PG_POOL_MAX` | `4` × `20` | Maximum Postgres connections (80). Keep this below `max_connections`, with room left for the migration job. |
+| `_MAX_INSTANCES` × `_PG_POOL_MAX` | `4` × `20` | Maximum Postgres connections (80). Keep this below the database's connection limit. |
 
 To run it manually, outside a trigger: `gcloud builds submit --config=cloudbuild.yaml --substitutions=COMMIT_SHA=$(git rev-parse HEAD)`.
 

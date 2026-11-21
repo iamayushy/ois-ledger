@@ -2,7 +2,6 @@ substitutions:
   _REGION: asia-south2
   _AR_REPO: ois
   _SERVICE: ois-ledger
-  _MIGRATE_JOB: ois-migrate
   _DB_SECRET: ois_db_url
   _CORS_ORIGIN: http://localhost:5173
   _MAX_INSTANCES: "4"
@@ -24,26 +23,6 @@ steps:
     args:
       - push
       - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$COMMIT_SHA
-
-  - id: migrate
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
-    args:
-      - run
-      - jobs
-      - deploy
-      - ${_MIGRATE_JOB}
-      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$COMMIT_SHA
-      - --region=${_REGION}
-      - --command=node
-      - --args=--enable-source-maps,dist/migrate.mjs
-      - --set-secrets=DATABASE_URL=${_DB_SECRET}:latest
-      - --set-env-vars=DOTENV_CONFIG_QUIET=true
-      - --tasks=1
-      - --max-retries=0
-      - --task-timeout=300
-      - --execute-now
-      - --wait
 
   - id: deploy
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
