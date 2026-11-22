@@ -157,6 +157,7 @@ done; wait
 | `pnpm db:reset` | wipe every table and seed again |
 | `pnpm typecheck` | strict TypeScript across every workspace |
 | `pnpm loadtest` | the k6 Tatkal test against **localhost** (needs [k6](https://grafana.com/docs/k6/latest/set-up/install-k6/), e.g. `brew install k6`). It writes orders, so run `pnpm db:reset` afterwards. |
+| `node loadtest/race-demo.mjs` | the evidence race: 20 buyers vs one last unit, then 10 identical retries on one key. Prints a markdown transcript and exits non-zero if anything is off. Run `pnpm db:reset` first for a clean GPU. |
 | `docker compose stop` | stop Postgres, keep the data |
 | `docker compose down -v` | remove Postgres **and its data**. `pnpm bootstrap` rebuilds it. |
 
@@ -353,10 +354,11 @@ cd apps/api && npx vitest run tests/concurrency.test.ts --reporter=verbose
 
 ### evidence
 
-Screenshots and test runs are submitted alongside the repo, not stored in it. To produce them yourself:
+Everything is in [`docs/evidence/`](docs/evidence/README.md), and every file there can be regenerated from this repo:
 
-- **a concurrency test run:** `cd apps/api && npx vitest run tests/concurrency.test.ts --reporter=verbose` prints all 8 proofs passing against your local Postgres.
-- **the operator console:** after `pnpm dev`, open http://localhost:5173, search `seed-order-active-001` and press Enter. The order, its request hash and its ledger trail appear. The Inventory tab shows live stock; run the ten-second race above and watch `SKU-GPU-5090` drop to 0.
+- **a concurrency test:** [all 8 proofs passing](docs/evidence/concurrency-tests.png), and a [live race transcript](docs/evidence/live-race.md) in which 20 buyers hit one last unit and 10 identical retries share one key, with the final stock, orders and ledger read back
+- **the operator UI:** [the last-unit SKU after the race](docs/evidence/ui-last-unit-after-race.png), [looking up an order by its key](docs/evidence/ui-order-lookup-by-key.png), [the retry investigation](docs/evidence/ui-retry-investigation.png), [inventory](docs/evidence/ui-inventory.png)
+- **load:** [1,000 concurrent buyers against the live deployment](docs/evidence/load-test-1000-vu.md)
 
 ### the operator console
 
