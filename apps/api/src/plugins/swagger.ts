@@ -26,7 +26,7 @@ export const swaggerPlugin = fp<SwaggerPluginOptions>(
             'Transactional, deadlock-free order reservation service with crash-safe idempotency and append-only inventory ledger.',
         },
         tags: [
-          { name: 'Health', description: 'Unversioned probes (/healthz, /readyz) and diagnostics (/api/health)' },
+          { name: 'Health', description: 'Unversioned probes (/health/live, /health/ready) and diagnostics (/api/health)' },
           { name: 'Inventory', description: 'SKU stock levels and audit ledger' },
           { name: 'Orders', description: 'Idempotent order reservation, lookup, and cancellation' },
         ],

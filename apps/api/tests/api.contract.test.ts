@@ -386,8 +386,8 @@ describe('API Contract & Error Envelope', () => {
     const paths = Object.keys(spec.paths);
     expect(spec.info.version).toBe('1.0.0');
     expect(paths.length).toBeGreaterThan(0);
-    const unversioned = new Set(['/healthz', '/readyz', '/api/health']);
+    const unversioned = new Set(['/health/live', '/health/ready', '/api/health']);
     expect(paths.every((path) => path.startsWith('/api/v1/') || unversioned.has(path))).toBe(true);
-    expect(paths.filter((path) => unversioned.has(path)).sort()).toEqual(['/api/health', '/healthz', '/readyz']);
+    expect(paths.filter((path) => unversioned.has(path)).sort()).toEqual(['/api/health', '/health/live', '/health/ready']);
   });
 });

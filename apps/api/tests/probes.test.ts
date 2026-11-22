@@ -51,12 +51,12 @@ describe('Liveness and readiness probes', () => {
     await Promise.all([dbClient.close(), deadClient.close()]);
   });
 
-  it('answers /healthz and /readyz without the gateway secret, while everything else still needs it', async () => {
-    const live = await gated.inject({ method: 'GET', url: '/healthz' });
+  it('answers /health/live and /health/ready without the gateway secret, while everything else still needs it', async () => {
+    const live = await gated.inject({ method: 'GET', url: '/health/live' });
     expect(live.statusCode).toBe(200);
     expect(live.json()).toMatchObject({ status: 'ok' });
 
-    const ready = await gated.inject({ method: 'GET', url: '/readyz' });
+    const ready = await gated.inject({ method: 'GET', url: '/health/ready' });
     expect(ready.statusCode).toBe(200);
     expect(ready.json()).toEqual({ status: 'ready', database: 'connected' });
 
@@ -68,21 +68,21 @@ describe('Liveness and readiness probes', () => {
 
   it('keeps successful probes out of the canonical logs', async () => {
     const before = gatedLogs.lines.length;
-    await gated.inject({ method: 'GET', url: '/healthz' });
-    await gated.inject({ method: 'GET', url: '/readyz' });
+    await gated.inject({ method: 'GET', url: '/health/live' });
+    await gated.inject({ method: 'GET', url: '/health/ready' });
     expect(gatedLogs.lines.slice(before).filter((line) => line['event'] === 'canonical-log-line')).toHaveLength(0);
   });
 
   it('reports not ready with a retryable 503 when PostgreSQL is unreachable, and logs it, while liveness stays up', async () => {
-    const live = await unreachable.inject({ method: 'GET', url: '/healthz' });
+    const live = await unreachable.inject({ method: 'GET', url: '/health/live' });
     expect(live.statusCode).toBe(200);
 
-    const ready = await unreachable.inject({ method: 'GET', url: '/readyz' });
+    const ready = await unreachable.inject({ method: 'GET', url: '/health/ready' });
     expect(ready.statusCode).toBe(503);
     expect(ready.headers['retry-after']).toBe('1');
     expect(ready.json<ErrorResponse>().error.code).toBe(ERROR_CODE.SERVICE_UNAVAILABLE);
     expect(
-      unreachableLogs.lines.some((line) => line['http_route'] === '/readyz' && line['http_status'] === 503),
+      unreachableLogs.lines.some((line) => line['http_route'] === '/health/ready' && line['http_status'] === 503),
     ).toBe(true);
   });
 });

@@ -129,7 +129,7 @@ pnpm dev
 **3. check it worked** (in a second terminal):
 
 ```bash
-curl -s http://localhost:3001/readyz
+curl -s http://localhost:3001/health/ready
 # {"status":"ready","database":"connected"}
 
 curl -s http://localhost:3001/api/v1/inventory | head -c 200
@@ -174,8 +174,8 @@ done; wait
 **notes for LLM agents running this for someone**
 
 - Run steps 2 and 3 exactly, in order, from the repo root. Every step is non-interactive and safe to repeat.
-- `pnpm dev` doesn't exit. Run it in the background, then poll `curl -s http://localhost:3001/readyz` until it returns `"status":"ready"` (usually under 10 s).
-- Success means `/readyz` returns `"status":"ready"` and `/api/v1/inventory` lists 26 products.
+- `pnpm dev` doesn't exit. Run it in the background, then poll `curl -s http://localhost:3001/health/ready` until it returns `"status":"ready"` (usually under 10 s).
+- Success means `/health/ready` returns `"status":"ready"` and `/api/v1/inventory` lists 26 products.
 - Don't set `BASE_URL` for `pnpm loadtest` unless the user explicitly asks for a remote target. The default is localhost on purpose. Never point it at `https://ois.atlair.cloud` without the owner's say-so; that's production.
 - Never run `docker compose down -v` or `pnpm db:reset` on someone's machine without saying it deletes local data.
 
@@ -297,13 +297,13 @@ Health isn't part of the API contract, so it lives outside `/api/v1`, and versio
 
 | path | answers | checks | used by |
 |---|---|---|---|
-| `GET /healthz` | **liveness**: is the process up? | nothing external, always fast | Cloud Run liveness probe, Docker `HEALTHCHECK` |
-| `GET /readyz` | **readiness**: can it take traffic? | `SELECT 1` within 2 s; `503 / 1301` if not | Cloud Run startup and readiness probes |
+| `GET /health/live` | **liveness**: is the process up? | nothing external, always fast | Cloud Run liveness probe, Docker `HEALTHCHECK` |
+| `GET /health/ready` | **readiness**: can it take traffic? | `SELECT 1` within 2 s; `503 / 1301` if not | Cloud Run startup and readiness probes |
 | `GET /api/health` | diagnostics | database latency and connection-pool stats | the operator console's status dot |
 
-- **`/healthz` is for in-container probes only.** Cloud Run's front end reserves some paths ending in `z`, `/healthz` included ([known issue](https://docs.cloud.google.com/run/docs/known-issues)), so from the internet it returns Google's 404. Cloud Run's own probes and Docker call the container directly, so they work. From outside, use `/readyz` or `/api/health`. Locally, `curl http://localhost:3001/healthz` works.
-- **No gateway secret on `/healthz` and `/readyz`,** so the platform can probe the container directly. They reveal nothing but "up" and "ready". `/api/health` goes through the gateway like everything else.
-- **Successful probes don't write log lines,** or they would bury everything else. A failing `/readyz` is logged.
+- **Why not `/healthz` and `/readyz`?** That's the Kubernetes convention, and the first version used it. But Cloud Run's front end reserves some paths ending in `z` ([known issue](https://docs.cloud.google.com/run/docs/known-issues)): `/healthz` returned Google's own HTML 404 from the internet, before the request ever reached the container. Google advises avoiding *all* paths ending in `z`, so the probes moved to `/health/live` and `/health/ready`, which work the same for Cloud Run's probes, Docker, and anyone with `curl`.
+- **No gateway secret on `/health/live` and `/health/ready`,** so the platform can probe the container directly. They reveal nothing but "up" and "ready". `/api/health` goes through the gateway like everything else.
+- **Successful probes don't write log lines,** or they would bury everything else. A failing `/health/ready` is logged.
 - **A new revision that can't reach Postgres never gets traffic,** so the previous one keeps serving.
 
 ### errors
@@ -425,7 +425,7 @@ The root `Dockerfile` is multi-stage on `node:24-alpine`, and plain enough to bu
 - `base`: pnpm pinned through Corepack. Manifests first, so installs are cached until the lockfile changes.
 - `build`: typecheck, then esbuild bundles the API with `@ois/shared` and `@ois/db` compiled in
 - `prod-deps`: frozen, offline, production-only install. Exactly the lockfile, nothing from the web app.
-- `runtime`: `tini` as PID 1, non-root `node` user, no package managers left behind, Docker health check on `/healthz`
+- `runtime`: `tini` as PID 1, non-root `node` user, no package managers left behind, Docker health check on `/health/live`
 
 Build context is the repo root, because the image needs the lockfile and the workspace packages.
 

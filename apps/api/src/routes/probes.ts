@@ -6,8 +6,8 @@ import {
 } from '@ois/shared/schemas';
 import { transientDbError } from '../errors.js';
 
-export const LIVENESS_PATH = '/healthz';
-export const READINESS_PATH = '/readyz';
+export const LIVENESS_PATH = '/health/live';
+export const READINESS_PATH = '/health/ready';
 export const PROBE_PATHS: ReadonlySet<string> = new Set([LIVENESS_PATH, READINESS_PATH]);
 
 const READINESS_TIMEOUT_MS = 2_000;
