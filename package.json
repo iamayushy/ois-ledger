@@ -17,7 +17,9 @@
     "db:generate": "pnpm --filter @ois/db db:generate",
     "db:migrate": "pnpm --filter @ois/db db:migrate",
     "db:seed": "pnpm --filter @ois/db db:seed",
-    "db:reset": "pnpm --filter @ois/db db:reset"
+    "db:reset": "pnpm --filter @ois/db db:reset",
+    "bootstrap": "node -e \"const fs=require('fs');if(!fs.existsSync('.env')){fs.copyFileSync('.env.example','.env');console.log('created .env from .env.example')}\" && docker compose up -d --wait postgres && pnpm db:migrate && pnpm db:seed",
+    "loadtest": "k6 run loadtest/tatkal.js"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",

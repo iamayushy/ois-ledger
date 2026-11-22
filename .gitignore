@@ -30,3 +30,4 @@ skills-lock.json
 !.dev.vars.example
 
 **/worker-configuration.d.ts
+loadtest/summary.json
