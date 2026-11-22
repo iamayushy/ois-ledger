@@ -95,9 +95,9 @@ function safeErrorCode(res) {
 }
 
 function placeOrder(key, customerId, items) {
-  const res = http.post(`${BASE_URL}/api/orders`, JSON.stringify({ customerId, items }), {
+  const res = http.post(`${BASE_URL}/api/v1/orders`, JSON.stringify({ customerId, items }), {
     headers: { 'content-type': 'application/json', 'idempotency-key': key },
-    tags: { name: 'POST /api/orders' },
+    tags: { name: 'POST /api/v1/orders' },
     timeout: '30s',
   });
   classify(res);
@@ -133,7 +133,7 @@ export function deadlockBait() {
 }
 
 export function browse() {
-  const path = exec.scenario.iterationInTest % 2 === 0 ? '/api/inventory' : '/api/orders?limit=20';
+  const path = exec.scenario.iterationInTest % 2 === 0 ? '/api/v1/inventory' : '/api/v1/orders?limit=20';
   const res = http.get(`${BASE_URL}${path}`, { tags: { name: `GET ${path.split('?')[0]}` }, timeout: '30s' });
   check(res, { 'browse ok': (r) => r.status === 200 });
 }

@@ -6,6 +6,7 @@ import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import Fastify, { LogController, type FastifyInstance } from 'fastify';
 import { generateUuidV7 } from '@ois/shared/uuidv7';
 import type { DbClient } from '@ois/db/client';
+import { annotate } from './observability/telemetry.js';
 import { canonicalLogPlugin, REQUEST_ID_HEADER } from './plugins/canonical-log.js';
 import { dbPlugin } from './plugins/db.js';
 import { errorHandlerPlugin } from './plugins/error-handler.js';
@@ -44,6 +45,8 @@ export interface LogStream {
 }
 
 const SERVICE_NAME = 'ois-api';
+
+export const API_V1_PREFIX = '/api/v1';
 
 const SEVERITY_BY_LEVEL: Readonly<Record<string, string>> = {
   trace: 'DEBUG',
@@ -117,7 +120,13 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     origin: options.corsOrigin ?? true,
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Idempotency-Key'],
-    exposedHeaders: ['Idempotency-Replayed', 'X-Response-Time', 'Retry-After', 'ETag', REQUEST_ID_HEADER],
+    exposedHeaders: [
+      'Idempotency-Replayed',
+      'X-Response-Time',
+      'Retry-After',
+      'ETag',
+      REQUEST_ID_HEADER,
+    ],
   });
 
   await app.register(compress, { global: true });
@@ -150,16 +159,23 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     maxWaiting: options.poolMaxWaiting ?? DEFAULT_POOL_MAX_WAITING,
   });
 
+  const registerApiRoutes = async (scoped: FastifyInstance): Promise<void> => {
+    await scoped.register(healthRoutes);
+    await scoped.register(async function dbBoundRoutes(bound) {
+      bound.addHook('onRequest', poolBackpressureHook);
+      await bound.register(inventoryRoutes);
+      await bound.register(orderRoutes);
+    });
+  };
+
   await app.register(
-    async function apiRoutes(scoped) {
-      await scoped.register(healthRoutes);
-      await scoped.register(async function dbBoundRoutes(bound) {
-        bound.addHook('onRequest', poolBackpressureHook);
-        await bound.register(inventoryRoutes);
-        await bound.register(orderRoutes);
+    async function apiV1(scoped) {
+      scoped.addHook('onRequest', async (request) => {
+        annotate(request.telemetry, { api_version: 'v1' });
       });
+      await registerApiRoutes(scoped);
     },
-    { prefix: '/api' },
+    { prefix: API_V1_PREFIX },
   );
 
   return app;

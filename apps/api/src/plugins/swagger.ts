@@ -21,7 +21,7 @@ export const swaggerPlugin = fp<SwaggerPluginOptions>(
         openapi: '3.1.0',
         info: {
           title: 'Order & Inventory Reservation Service API',
-          version: '0.1.0',
+          version: '1.0.0',
           description:
             'Transactional, deadlock-free order reservation service with crash-safe idempotency and append-only inventory ledger.',
         },

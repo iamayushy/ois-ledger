@@ -54,6 +54,6 @@ COPY --chown=node:node apps/api/package.json ./package.json
 USER node
 EXPOSE 3001
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
-  CMD wget -qO- --header="x-proxy-secret: ${PROXY_SHARED_SECRET:-}" "http://127.0.0.1:${API_PORT}/api/health" > /dev/null || exit 1
+  CMD wget -qO- --header="x-proxy-secret: ${PROXY_SHARED_SECRET:-}" "http://127.0.0.1:${API_PORT}/api/v1/health" > /dev/null || exit 1
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "--enable-source-maps", "dist/server.mjs"]

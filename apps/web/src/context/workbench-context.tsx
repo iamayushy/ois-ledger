@@ -240,7 +240,7 @@ export function WorkbenchProvider({ children }: { readonly children: ReactNode }
         mutateInventory(),
         mutateOrders(),
         globalMutate(
-          (key) => typeof key === 'string' && key.startsWith('/api/inventory/'),
+          (key) => typeof key === 'string' && key.startsWith('/api/v1/inventory/'),
           undefined,
           { revalidate: true },
         ),

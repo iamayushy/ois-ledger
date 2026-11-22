@@ -59,7 +59,7 @@ export async function createOrder(
   idempotencyKey: string,
   payload: CreateOrderBody,
 ): Promise<CreateOrderApiResult> {
-  const result = await postResult<CreateOrderResponse>('/api/orders', payload, {
+  const result = await postResult<CreateOrderResponse>('/api/v1/orders', payload, {
     headers: { 'idempotency-key': idempotencyKey },
   });
   if (!result.ok) {
@@ -75,7 +75,7 @@ export async function createOrder(
 
 export async function cancelOrder(orderId: string): Promise<CancelOrderApiResult> {
   const result = await postResult<CancelOrderResponse>(
-    `/api/orders/${encodeURIComponent(orderId)}/cancel`,
+    `/api/v1/orders/${encodeURIComponent(orderId)}/cancel`,
   );
   if (!result.ok) {
     return result;

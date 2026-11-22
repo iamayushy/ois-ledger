@@ -11,13 +11,13 @@ export interface OrdersListQueryParams {
 
 export const oisKeys = {
   health: {
-    status: () => '/api/health' as const,
+    status: () => '/api/v1/health' as const,
   },
   inventory: {
-    list: () => '/api/inventory' as const,
+    list: () => '/api/v1/inventory' as const,
     detail: (sku: string, limit = 50) => {
       const qs = buildQueryString({ limit });
-      return `/api/inventory/${encodeURIComponent(sku)}${qs ? `?${qs}` : ''}`;
+      return `/api/v1/inventory/${encodeURIComponent(sku)}${qs ? `?${qs}` : ''}`;
     },
   },
   orders: {
@@ -29,10 +29,10 @@ export const oisKeys = {
         sku: params.sku,
         cursor: params.cursor,
       });
-      return `/api/orders${qs ? `?${qs}` : ''}`;
+      return `/api/v1/orders${qs ? `?${qs}` : ''}`;
     },
-    detail: (orderId: string) => `/api/orders/${encodeURIComponent(orderId)}`,
+    detail: (orderId: string) => `/api/v1/orders/${encodeURIComponent(orderId)}`,
     byKey: (idempotencyKey: string) =>
-      `/api/orders/by-key/${encodeURIComponent(idempotencyKey)}`,
+      `/api/v1/orders/by-key/${encodeURIComponent(idempotencyKey)}`,
   },
 } as const;

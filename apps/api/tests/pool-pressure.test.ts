@@ -48,7 +48,7 @@ async function buildSaturatedHarness(
 function postOrder(app: FastifyInstance, key: string) {
   return app.inject({
     method: 'POST',
-    url: '/api/orders',
+    url: '/api/v1/orders',
     headers: { 'idempotency-key': key },
     payload: ORDER_PAYLOAD,
   });

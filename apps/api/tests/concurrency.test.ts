@@ -37,7 +37,7 @@ async function postOrder(
   key: string,
   payload: CreateOrderBody,
 ): Promise<HttpResult<CreateOrderResponse | ErrorResponse>> {
-  const response = await fetch(`${baseUrl}/api/orders`, {
+  const response = await fetch(`${baseUrl}/api/v1/orders`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -57,7 +57,7 @@ async function postCancel(
   baseUrl: string,
   orderId: string,
 ): Promise<HttpResult<CancelOrderResponse | ErrorResponse>> {
-  const response = await fetch(`${baseUrl}/api/orders/${orderId}/cancel`, {
+  const response = await fetch(`${baseUrl}/api/v1/orders/${orderId}/cancel`, {
     method: 'POST',
   });
   const body = (await response.json()) as CancelOrderResponse | ErrorResponse;
@@ -538,7 +538,7 @@ describe('Real-PostgreSQL Concurrency, Idempotency & Atomicity Proofs', () => {
 
     const holder = await holdProductRowLock(dbClient, 'SKU-TIMEOUT');
     const abort = new AbortController();
-    const timedOut = fetch(`${baseUrl}/api/orders`, {
+    const timedOut = fetch(`${baseUrl}/api/v1/orders`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'idempotency-key': key },
       body: JSON.stringify(payload),

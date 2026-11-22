@@ -72,7 +72,7 @@ describe('API Contract & Error Envelope', () => {
   });
 
   it('serves health check with database latency, pool metrics, and security headers', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/health' });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/health' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['x-response-time']).toMatch(/ms$/);
     expect(res.headers['x-content-type-options']).toBe('nosniff');
@@ -85,7 +85,7 @@ describe('API Contract & Error Envelope', () => {
   });
 
   it('lists inventory sorted by SKU and supports conditional ETag 304 responses', async () => {
-    const first = await app.inject({ method: 'GET', url: '/api/inventory' });
+    const first = await app.inject({ method: 'GET', url: '/api/v1/inventory' });
     expect(first.statusCode).toBe(200);
     const etagHeader = first.headers.etag;
     expect(typeof etagHeader).toBe('string');
@@ -95,14 +95,14 @@ describe('API Contract & Error Envelope', () => {
 
     const cached = await app.inject({
       method: 'GET',
-      url: '/api/inventory',
+      url: '/api/v1/inventory',
       headers: { 'if-none-match': String(etagHeader) },
     });
     expect(cached.statusCode).toBe(304);
   });
 
   it('returns product detail with ledger and 404 (1101) for unknown product', async () => {
-    const found = await app.inject({ method: 'GET', url: '/api/inventory/SKU-A' });
+    const found = await app.inject({ method: 'GET', url: '/api/v1/inventory/SKU-A' });
     expect(found.statusCode).toBe(200);
     const detail = found.json<ProductDetailDto>();
     expect(detail.product.sku).toBe('SKU-A');
@@ -110,7 +110,7 @@ describe('API Contract & Error Envelope', () => {
     expect(detail.ledger).toHaveLength(1);
     expect(detail.ledger[0]?.eventType).toBe('SEED');
 
-    const missing = await app.inject({ method: 'GET', url: '/api/inventory/SKU-DOES-NOT-EXIST' });
+    const missing = await app.inject({ method: 'GET', url: '/api/v1/inventory/SKU-DOES-NOT-EXIST' });
     expect(missing.statusCode).toBe(404);
     assertCleanErrorBody(missing.json(), ERROR_CODE.PRODUCT_NOT_FOUND);
   });
@@ -118,7 +118,7 @@ describe('API Contract & Error Envelope', () => {
   it('enforces validation and 1000-series error codes with zero HTTP status/headers in JSON', async () => {
     const noKey = await app.inject({
       method: 'POST',
-      url: '/api/orders',
+      url: '/api/v1/orders',
       payload: { customerId: 'cust-1', items: [{ sku: 'SKU-A', quantity: 1 }] },
     });
     expect(noKey.statusCode).toBe(400);
@@ -126,7 +126,7 @@ describe('API Contract & Error Envelope', () => {
 
     const blankKey = await app.inject({
       method: 'POST',
-      url: '/api/orders',
+      url: '/api/v1/orders',
       headers: { 'idempotency-key': '   ' },
       payload: { customerId: 'cust-1', items: [{ sku: 'SKU-A', quantity: 1 }] },
     });
@@ -135,7 +135,7 @@ describe('API Contract & Error Envelope', () => {
 
     const zeroQty = await app.inject({
       method: 'POST',
-      url: '/api/orders',
+      url: '/api/v1/orders',
       headers: { 'idempotency-key': 'bad-qty-001' },
       payload: { customerId: 'cust-1', items: [{ sku: 'SKU-A', quantity: 0 }] },
     });
@@ -144,7 +144,7 @@ describe('API Contract & Error Envelope', () => {
 
     const emptyItems = await app.inject({
       method: 'POST',
-      url: '/api/orders',
+      url: '/api/v1/orders',
       headers: { 'idempotency-key': 'empty-items-001' },
       payload: { customerId: 'cust-1', items: [] },
     });
@@ -153,7 +153,7 @@ describe('API Contract & Error Envelope', () => {
 
     const dupSku = await app.inject({
       method: 'POST',
-      url: '/api/orders',
+      url: '/api/v1/orders',
       headers: { 'idempotency-key': 'dup-sku-001' },
       payload: {
         customerId: 'cust-1',
@@ -169,7 +169,7 @@ describe('API Contract & Error Envelope', () => {
 
     const unknownSku = await app.inject({
       method: 'POST',
-      url: '/api/orders',
+      url: '/api/v1/orders',
       headers: { 'idempotency-key': 'unknown-sku-001' },
       payload: { customerId: 'cust-1', items: [{ sku: 'SKU-NOPE', quantity: 1 }] },
     });
@@ -177,17 +177,17 @@ describe('API Contract & Error Envelope', () => {
     const unknownBody = assertCleanErrorBody(unknownSku.json(), ERROR_CODE.UNKNOWN_SKU);
     expect(unknownBody.error.details?.missingSkus).toEqual(['SKU-NOPE']);
 
-    const badRoute = await app.inject({ method: 'GET', url: '/api/nonexistent-route' });
+    const badRoute = await app.inject({ method: 'GET', url: '/api/v1/nonexistent-route' });
     expect(badRoute.statusCode).toBe(404);
     assertCleanErrorBody(badRoute.json(), ERROR_CODE.ROUTE_NOT_FOUND);
 
-    const badOrderId = await app.inject({ method: 'GET', url: '/api/orders/not-a-uuid' });
+    const badOrderId = await app.inject({ method: 'GET', url: '/api/v1/orders/not-a-uuid' });
     expect(badOrderId.statusCode).toBe(404);
     assertCleanErrorBody(badOrderId.json(), ERROR_CODE.ORDER_NOT_FOUND);
 
     const badCursor = await app.inject({
       method: 'GET',
-      url: '/api/orders?cursor=definitely-invalid-cursor',
+      url: '/api/v1/orders?cursor=definitely-invalid-cursor',
     });
     expect(badCursor.statusCode).toBe(400);
     assertCleanErrorBody(badCursor.json(), ERROR_CODE.INVALID_CURSOR);
@@ -198,7 +198,7 @@ describe('API Contract & Error Envelope', () => {
   it('creates, replays with canonical payload equivalence, inspects by ID and key, and cancels idempotently', async () => {
     const createRes = await app.inject({
       method: 'POST',
-      url: '/api/orders',
+      url: '/api/v1/orders',
       headers: { 'idempotency-key': 'contract-order-001' },
       payload: {
         customerId: 'cust-alpha',
@@ -218,7 +218,7 @@ describe('API Contract & Error Envelope', () => {
 
     const replayRes = await app.inject({
       method: 'POST',
-      url: '/api/orders',
+      url: '/api/v1/orders',
       headers: { 'idempotency-key': 'contract-order-001' },
       payload: {
         customerId: '  cust-alpha ',
@@ -236,7 +236,7 @@ describe('API Contract & Error Envelope', () => {
 
     const byIdRes = await app.inject({
       method: 'GET',
-      url: `/api/orders/${created.order.id}`,
+      url: `/api/v1/orders/${created.order.id}`,
     });
     expect(byIdRes.statusCode).toBe(200);
     const detailById = byIdRes.json<OrderDetailDto>();
@@ -248,14 +248,14 @@ describe('API Contract & Error Envelope', () => {
 
     const byKeyRes = await app.inject({
       method: 'GET',
-      url: '/api/orders/by-key/contract-order-001',
+      url: '/api/v1/orders/by-key/contract-order-001',
     });
     expect(byKeyRes.statusCode).toBe(200);
     expect(byKeyRes.json<OrderDetailDto>().order.id).toBe(created.order.id);
 
     const firstCancel = await app.inject({
       method: 'POST',
-      url: `/api/orders/${created.order.id}/cancel`,
+      url: `/api/v1/orders/${created.order.id}/cancel`,
     });
     expect(firstCancel.statusCode).toBe(200);
     const firstCancelBody = firstCancel.json<CancelOrderResponse>();
@@ -265,7 +265,7 @@ describe('API Contract & Error Envelope', () => {
 
     const secondCancel = await app.inject({
       method: 'POST',
-      url: `/api/orders/${created.order.id}/cancel`,
+      url: `/api/v1/orders/${created.order.id}/cancel`,
     });
     expect(secondCancel.statusCode).toBe(200);
     const secondCancelBody = secondCancel.json<CancelOrderResponse>();
@@ -273,14 +273,14 @@ describe('API Contract & Error Envelope', () => {
     expect(secondCancelBody.order.status).toBe('CANCELLED');
 
     const afterCancelDetail = (
-      await app.inject({ method: 'GET', url: `/api/orders/${created.order.id}` })
+      await app.inject({ method: 'GET', url: `/api/v1/orders/${created.order.id}` })
     ).json<OrderDetailDto>();
     expect(afterCancelDetail.ledger).toHaveLength(4);
     expect(afterCancelDetail.ledger.filter((e) => e.eventType === 'RELEASE')).toHaveLength(2);
 
     const replayAfterCancel = await app.inject({
       method: 'POST',
-      url: '/api/orders',
+      url: '/api/v1/orders',
       headers: { 'idempotency-key': 'contract-order-001' },
       payload: {
         customerId: 'cust-alpha',
@@ -298,7 +298,7 @@ describe('API Contract & Error Envelope', () => {
     expect(replayAfterCancelBody.order.cancelledAt).toBeNull();
 
     const afterReplayDetail = (
-      await app.inject({ method: 'GET', url: `/api/orders/${created.order.id}` })
+      await app.inject({ method: 'GET', url: `/api/v1/orders/${created.order.id}` })
     ).json<OrderDetailDto>();
     expect(afterReplayDetail.order.status).toBe('CANCELLED');
     expect(afterReplayDetail.ledger).toHaveLength(4);
@@ -311,7 +311,7 @@ describe('API Contract & Error Envelope', () => {
     for (let i = 1; i <= 5; i += 1) {
       const res = await app.inject({
         method: 'POST',
-        url: '/api/orders',
+        url: '/api/v1/orders',
         headers: { 'idempotency-key': `page-key-00${i}` },
         payload: {
           customerId: i % 2 === 0 ? 'cust-even' : 'cust-odd',
@@ -328,7 +328,7 @@ describe('API Contract & Error Envelope', () => {
     }
     const cancelRes = await app.inject({
       method: 'POST',
-      url: `/api/orders/${cancelledId}/cancel`,
+      url: `/api/v1/orders/${cancelledId}/cancel`,
     });
     expect(cancelRes.statusCode).toBe(200);
 
@@ -336,8 +336,8 @@ describe('API Contract & Error Envelope', () => {
     let cursor: string | null = null;
     for (let page = 0; page < 5; page += 1) {
       const url: string = cursor
-        ? `/api/orders?limit=2&cursor=${encodeURIComponent(cursor)}`
-        : '/api/orders?limit=2';
+        ? `/api/v1/orders?limit=2&cursor=${encodeURIComponent(cursor)}`
+        : '/api/v1/orders?limit=2';
       const res = await app.inject({ method: 'GET', url });
       expect(res.statusCode).toBe(200);
       const body: ListOrdersResponse = res.json<ListOrdersResponse>();
@@ -353,21 +353,39 @@ describe('API Contract & Error Envelope', () => {
     expect(seenIds).toEqual([...createdIds].reverse());
 
     const cancelledOnly = (
-      await app.inject({ method: 'GET', url: '/api/orders?status=CANCELLED' })
+      await app.inject({ method: 'GET', url: '/api/v1/orders?status=CANCELLED' })
     ).json<ListOrdersResponse>();
     expect(cancelledOnly.orders.map((o) => o.id)).toEqual([cancelledId]);
 
     const searchByKey = (
-      await app.inject({ method: 'GET', url: '/api/orders?search=page-key-003' })
+      await app.inject({ method: 'GET', url: '/api/v1/orders?search=page-key-003' })
     ).json<ListOrdersResponse>();
     expect(searchByKey.orders).toHaveLength(1);
     expect(searchByKey.orders[0]?.idempotencyKey).toBe('page-key-003');
 
     const bySku = (
-      await app.inject({ method: 'GET', url: '/api/orders?sku=SKU-B' })
+      await app.inject({ method: 'GET', url: '/api/v1/orders?sku=SKU-B' })
     ).json<ListOrdersResponse>();
     expect(bySku.orders).toHaveLength(0);
 
     await assertInventoryInvariants(dbClient.db);
+  });
+
+  it('serves the API only under /api/v1 and documents only versioned paths', async () => {
+    const versioned = await app.inject({ method: 'GET', url: '/api/v1/inventory' });
+    expect(versioned.statusCode).toBe(200);
+
+    const unversioned = await app.inject({ method: 'GET', url: '/api/inventory' });
+    expect(unversioned.statusCode).toBe(404);
+    assertCleanErrorBody(unversioned.json(), ERROR_CODE.ROUTE_NOT_FOUND);
+
+    const spec = (await app.inject({ method: 'GET', url: '/docs/json' })).json<{
+      readonly info: { readonly version: string };
+      readonly paths: Record<string, unknown>;
+    }>();
+    const paths = Object.keys(spec.paths);
+    expect(spec.info.version).toBe('1.0.0');
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.every((path) => path.startsWith('/api/v1/'))).toBe(true);
   });
 });

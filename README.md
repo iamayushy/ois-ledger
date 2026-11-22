@@ -93,7 +93,7 @@ How I know: Proof 5, 20 alternating `[A,B]` / `[B,A]` orders, zero deadlocks. In
 Under real load something will eventually be slow. The rule: fail loudly, fail retryably, never fail halfway.
 
 - deadlock, serialization failure, lock timeout, statement timeout, pool timeout, dropped connection → `503 / 1301` with `Retry-After`. Retrying with the **same** key is always safe, even if the commit actually landed.
-- too many requests already waiting for a database connection → shed at the door with `503 / 1302` before any database work. `/api/health` is exempt so probes still work.
+- too many requests already waiting for a database connection → shed at the door with `503 / 1302` before any database work. `/api/v1/health` is exempt so probes still work.
 - unexpected errors → `500 / 1300`, no stack trace in the body.
 
 ## run it locally (zero effort)
@@ -129,10 +129,10 @@ pnpm dev
 **3. check it worked** (in a second terminal):
 
 ```bash
-curl -s http://localhost:3001/api/health
+curl -s http://localhost:3001/api/v1/health
 # {"status":"ok","database":"connected", …}
 
-curl -s http://localhost:3001/api/inventory | head -c 200
+curl -s http://localhost:3001/api/v1/inventory | head -c 200
 # {"products":[{"sku":"SKU-BUDS-PRO", …
 ```
 
@@ -142,7 +142,7 @@ Then open http://localhost:5173 (the console) and http://localhost:3001/docs (Sw
 
 ```bash
 for i in 1 2 3 4 5; do
-  curl -s -o /dev/null -w "buyer $i -> %{http_code}\n" -X POST http://localhost:3001/api/orders \
+  curl -s -o /dev/null -w "buyer $i -> %{http_code}\n" -X POST http://localhost:3001/api/v1/orders \
     -H 'Content-Type: application/json' -H "Idempotency-Key: race-$i-$RANDOM" \
     -d '{"customerId":"buyer-'$i'","items":[{"sku":"SKU-GPU-5090","quantity":1}]}' &
 done; wait
@@ -174,8 +174,8 @@ done; wait
 **notes for LLM agents running this for someone**
 
 - Run steps 2 and 3 exactly, in order, from the repo root. Every step is non-interactive and safe to repeat.
-- `pnpm dev` doesn't exit. Run it in the background, then poll `curl -s http://localhost:3001/api/health` until it returns `"status":"ok"` (usually under 10 s).
-- Success means `health` returns `"database":"connected"` and `/api/inventory` lists 26 products.
+- `pnpm dev` doesn't exit. Run it in the background, then poll `curl -s http://localhost:3001/api/v1/health` until it returns `"status":"ok"` (usually under 10 s).
+- Success means `health` returns `"database":"connected"` and `/api/v1/inventory` lists 26 products.
 - Don't set `BASE_URL` for `pnpm loadtest` unless the user explicitly asks for a remote target. The default is localhost on purpose. Never point it at `https://ois.atlair.cloud` without the owner's say-so; that's production.
 - Never run `docker compose down -v` or `pnpm db:reset` on someone's machine without saying it deletes local data.
 
@@ -207,7 +207,9 @@ Postgres runs with `lock_timeout=5s`, `statement_timeout=10s`, `idle_in_transact
 
 ## the api
 
-Base: `http://localhost:3001/api` (or `https://ois.atlair.cloud/api`). Every route validates input and serializes output through TypeBox.
+Base: `http://localhost:3001/api/v1` (or `https://ois.atlair.cloud/api/v1`). Every route validates input and serializes output through TypeBox.
+
+**versioning.** The version is in the path: `/api/v1`. Inside v1 I only make additive changes: new endpoints, new optional fields, new error codes. Anything that would break a client (renaming or removing a field, changing a status code, tightening validation) ships as `/api/v2`, side by side with v1, until v1's callers have moved. The OpenAPI document at `/docs/json` is version `1.0.0` and lists only `/api/v1` paths, and every canonical log line carries `api_version`, so you can see who still calls an old version before you remove it.
 
 | method | path | does |
 |---|---|---|
@@ -223,7 +225,7 @@ Base: `http://localhost:3001/api` (or `https://ois.atlair.cloud/api`). Every rou
 **reserve:**
 
 ```bash
-curl -i -X POST http://localhost:3001/api/orders \
+curl -i -X POST http://localhost:3001/api/v1/orders \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: checkout-7f3a' \
   -d '{"customerId":"cust-42","items":[{"sku":"SKU-MON-4K","quantity":1},{"sku":"SKU-MOUSE-PRO","quantity":2}]}'
@@ -245,7 +247,7 @@ Send the same thing again: `200`, `Idempotency-Replayed: true`, the identical bo
 **same key, different payload:**
 
 ```bash
-curl -i -X POST http://localhost:3001/api/orders \
+curl -i -X POST http://localhost:3001/api/v1/orders \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: checkout-7f3a' \
   -d '{"customerId":"cust-42","items":[{"sku":"SKU-MON-4K","quantity":5}]}'
 ```
@@ -257,7 +259,7 @@ HTTP/1.1 409 Conflict
 **one item short, nothing reserved:**
 
 ```bash
-curl -i -X POST http://localhost:3001/api/orders \
+curl -i -X POST http://localhost:3001/api/v1/orders \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: checkout-9b11' \
   -d '{"customerId":"cust-7","items":[{"sku":"SKU-KB-75","quantity":1},{"sku":"SKU-CABLE-USB4","quantity":1}]}'
 ```
@@ -269,10 +271,10 @@ HTTP/1.1 409 Conflict
 **look, cancel, cancel again:**
 
 ```bash
-curl -s http://localhost:3001/api/orders/<orderId>
-curl -s http://localhost:3001/api/orders/by-key/checkout-7f3a
-curl -s -X POST http://localhost:3001/api/orders/<orderId>/cancel
-curl -s -X POST http://localhost:3001/api/orders/<orderId>/cancel
+curl -s http://localhost:3001/api/v1/orders/<orderId>
+curl -s http://localhost:3001/api/v1/orders/by-key/checkout-7f3a
+curl -s -X POST http://localhost:3001/api/v1/orders/<orderId>/cancel
+curl -s -X POST http://localhost:3001/api/v1/orders/<orderId>/cancel
 ```
 
 First cancel: `"alreadyCancelled": false`. Every one after: `"alreadyCancelled": true`, nothing released.
@@ -280,8 +282,8 @@ First cancel: `"alreadyCancelled": false`. Every one after: `"alreadyCancelled":
 **stock:**
 
 ```bash
-curl -s http://localhost:3001/api/inventory
-curl -s 'http://localhost:3001/api/inventory/SKU-GPU-5090?limit=20'
+curl -s http://localhost:3001/api/v1/inventory
+curl -s 'http://localhost:3001/api/v1/inventory/SKU-GPU-5090?limit=20'
 ```
 ```json
 { "product": { "sku": "SKU-GPU-5090", "name": "RTX 5090 Founders Edition", "pricePaise": 19999900,
@@ -381,13 +383,13 @@ I follow Stripe's [canonical log lines](https://stripe.com/blog/canonical-log-li
 
 ```json
 {"severity":"INFO","service":"ois-api","build_id":"ois-ledger-00007-abc","request_id":"01a1ffdf-3afc-7137-88a9-4a6b49859173",
- "event":"canonical-log-line","http_method":"POST","http_route":"/api/orders","http_status":409,"duration_ms":4.04,
+ "event":"canonical-log-line","http_method":"POST","http_route":"/api/v1/orders","http_status":409,"duration_ms":4.04,
  "cf_ray":"a5e2600e39e44348-BOM","db_query_count":5,"db_duration_ms":2.66,"db_acquire_count":1,"db_pool_wait_ms":0.03,
  "db_slowest_query_ms":0.75,"db_slowest_statement":"begin","idempotency_key":"checkout-9b11","customer_id":"cust-7",
  "skus":["SKU-GPU-5090"],"shortage_skus":["SKU-GPU-5090"],"error_code":1201,"error_slug":"insufficient_stock"}
 ```
 
-- route templates (`/api/orders/:id`), never raw paths
+- route templates (`/api/v1/orders/:id`), never raw paths
 - the pg pool is instrumented once. Every query and connection wait is timed and attributed to its request (`AsyncLocalStorage`). Totals and the slowest statement only, and SQL text only, never parameters.
 - stable `error_slug`s, so `insufficient_stock` groups across releases
 - `request_id` is a UUIDv7 the API makes itself (returned as `X-Request-Id`). `cf_ray` links back to Cloudflare. `build_id` is the Cloud Run revision.
@@ -409,7 +411,7 @@ The root `Dockerfile` is multi-stage on `node:24-alpine`, and plain enough to bu
 - `base`: pnpm pinned through Corepack. Manifests first, so installs are cached until the lockfile changes.
 - `build`: typecheck, then esbuild bundles the API with `@ois/shared` and `@ois/db` compiled in
 - `prod-deps`: frozen, offline, production-only install. Exactly the lockfile, nothing from the web app.
-- `runtime`: `tini` as PID 1, non-root `node` user, no package managers left behind, health check on `/api/health`
+- `runtime`: `tini` as PID 1, non-root `node` user, no package managers left behind, health check on `/api/v1/health`
 
 Build context is the repo root, because the image needs the lockfile and the workspace packages.
 
