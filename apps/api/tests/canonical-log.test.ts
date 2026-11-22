@@ -149,8 +149,8 @@ describe('Canonical log lines', () => {
   });
 
   it('accepts only well-formed cf-ray values', async () => {
-    const valid = await app.inject({ method: 'GET', url: '/api/v1/health', headers: { 'cf-ray': 'a5e2600e39e44348-MRS' } });
-    const forged = await app.inject({ method: 'GET', url: '/api/v1/health', headers: { 'cf-ray': '"><script>' } });
+    const valid = await app.inject({ method: 'GET', url: '/api/health', headers: { 'cf-ray': 'a5e2600e39e44348-MRS' } });
+    const forged = await app.inject({ method: 'GET', url: '/api/health', headers: { 'cf-ray': '"><script>' } });
     expect(linesFor(logs.lines, String(valid.headers['x-request-id']))[0]?.['cf_ray']).toBe('a5e2600e39e44348-MRS');
     expect(linesFor(logs.lines, String(forged.headers['x-request-id']))[0]?.['cf_ray']).toBeUndefined();
   });

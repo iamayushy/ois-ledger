@@ -15,6 +15,7 @@ import { pressurePlugin } from './plugins/pressure.js';
 import { proxyAuthPlugin } from './plugins/proxy-auth.js';
 import { swaggerPlugin } from './plugins/swagger.js';
 import { healthRoutes } from './routes/health.js';
+import { probeRoutes } from './routes/probes.js';
 import { inventoryRoutes } from './routes/inventory.js';
 import { orderRoutes } from './routes/orders.js';
 
@@ -160,13 +161,15 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   });
 
   const registerApiRoutes = async (scoped: FastifyInstance): Promise<void> => {
-    await scoped.register(healthRoutes);
     await scoped.register(async function dbBoundRoutes(bound) {
       bound.addHook('onRequest', poolBackpressureHook);
       await bound.register(inventoryRoutes);
       await bound.register(orderRoutes);
     });
   };
+
+  await app.register(probeRoutes);
+  await app.register(healthRoutes, { prefix: '/api' });
 
   await app.register(
     async function apiV1(scoped) {

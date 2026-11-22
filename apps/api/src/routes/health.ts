@@ -9,7 +9,7 @@ export const healthRoutes: FastifyPluginAsyncTypebox = async (fastify) => {
     {
       schema: {
         tags: ['Health'],
-        summary: 'Check API and PostgreSQL connection pool health',
+        summary: 'Diagnostics (unversioned): PostgreSQL latency and connection pool statistics',
         response: {
           200: HealthResponseSchema,
           503: ErrorResponseSchema,

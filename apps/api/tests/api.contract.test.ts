@@ -72,7 +72,7 @@ describe('API Contract & Error Envelope', () => {
   });
 
   it('serves health check with database latency, pool metrics, and security headers', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/v1/health' });
+    const res = await app.inject({ method: 'GET', url: '/api/health' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['x-response-time']).toMatch(/ms$/);
     expect(res.headers['x-content-type-options']).toBe('nosniff');
@@ -375,9 +375,9 @@ describe('API Contract & Error Envelope', () => {
     const versioned = await app.inject({ method: 'GET', url: '/api/v1/inventory' });
     expect(versioned.statusCode).toBe(200);
 
-    const unversioned = await app.inject({ method: 'GET', url: '/api/inventory' });
-    expect(unversioned.statusCode).toBe(404);
-    assertCleanErrorBody(unversioned.json(), ERROR_CODE.ROUTE_NOT_FOUND);
+    const unversionedRoute = await app.inject({ method: 'GET', url: '/api/inventory' });
+    expect(unversionedRoute.statusCode).toBe(404);
+    assertCleanErrorBody(unversionedRoute.json(), ERROR_CODE.ROUTE_NOT_FOUND);
 
     const spec = (await app.inject({ method: 'GET', url: '/docs/json' })).json<{
       readonly info: { readonly version: string };
@@ -386,6 +386,8 @@ describe('API Contract & Error Envelope', () => {
     const paths = Object.keys(spec.paths);
     expect(spec.info.version).toBe('1.0.0');
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths.every((path) => path.startsWith('/api/v1/'))).toBe(true);
+    const unversioned = new Set(['/healthz', '/readyz', '/api/health']);
+    expect(paths.every((path) => path.startsWith('/api/v1/') || unversioned.has(path))).toBe(true);
+    expect(paths.filter((path) => unversioned.has(path)).sort()).toEqual(['/api/health', '/healthz', '/readyz']);
   });
 });

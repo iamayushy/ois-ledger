@@ -11,7 +11,7 @@ export interface OrdersListQueryParams {
 
 export const oisKeys = {
   health: {
-    status: () => '/api/v1/health' as const,
+    status: () => '/api/health' as const,
   },
   inventory: {
     list: () => '/api/v1/inventory' as const,

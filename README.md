@@ -93,7 +93,7 @@ How I know: Proof 5, 20 alternating `[A,B]` / `[B,A]` orders, zero deadlocks. In
 Under real load something will eventually be slow. The rule: fail loudly, fail retryably, never fail halfway.
 
 - deadlock, serialization failure, lock timeout, statement timeout, pool timeout, dropped connection → `503 / 1301` with `Retry-After`. Retrying with the **same** key is always safe, even if the commit actually landed.
-- too many requests already waiting for a database connection → shed at the door with `503 / 1302` before any database work. `/api/v1/health` is exempt so probes still work.
+- too many requests already waiting for a database connection → shed at the door with `503 / 1302` before any database work. The health endpoints are exempt, so probes still work.
 - unexpected errors → `500 / 1300`, no stack trace in the body.
 
 ## run it locally (zero effort)
@@ -129,8 +129,8 @@ pnpm dev
 **3. check it worked** (in a second terminal):
 
 ```bash
-curl -s http://localhost:3001/api/v1/health
-# {"status":"ok","database":"connected", …}
+curl -s http://localhost:3001/readyz
+# {"status":"ready","database":"connected"}
 
 curl -s http://localhost:3001/api/v1/inventory | head -c 200
 # {"products":[{"sku":"SKU-BUDS-PRO", …
@@ -174,8 +174,8 @@ done; wait
 **notes for LLM agents running this for someone**
 
 - Run steps 2 and 3 exactly, in order, from the repo root. Every step is non-interactive and safe to repeat.
-- `pnpm dev` doesn't exit. Run it in the background, then poll `curl -s http://localhost:3001/api/v1/health` until it returns `"status":"ok"` (usually under 10 s).
-- Success means `health` returns `"database":"connected"` and `/api/v1/inventory` lists 26 products.
+- `pnpm dev` doesn't exit. Run it in the background, then poll `curl -s http://localhost:3001/readyz` until it returns `"status":"ready"` (usually under 10 s).
+- Success means `/readyz` returns `"status":"ready"` and `/api/v1/inventory` lists 26 products.
 - Don't set `BASE_URL` for `pnpm loadtest` unless the user explicitly asks for a remote target. The default is localhost on purpose. Never point it at `https://ois.atlair.cloud` without the owner's say-so; that's production.
 - Never run `docker compose down -v` or `pnpm db:reset` on someone's machine without saying it deletes local data.
 
@@ -220,7 +220,6 @@ Base: `http://localhost:3001/api/v1` (or `https://ois.atlair.cloud/api/v1`). Eve
 | `POST` | `/orders/:id/cancel` | cancel. Releases stock once. |
 | `GET` | `/inventory` | every SKU: total, available, reserved |
 | `GET` | `/inventory/:sku` | one SKU and its recent ledger (`?limit=`) |
-| `GET` | `/health` | database latency, pool stats |
 
 **reserve:**
 
@@ -291,6 +290,20 @@ curl -s 'http://localhost:3001/api/v1/inventory/SKU-GPU-5090?limit=20'
   "ledger": [ { "id": "7", "sku": "SKU-GPU-5090", "orderId": "…", "idempotencyKey": "…", "eventType": "RESERVE",
                 "delta": -1, "availableAfter": 0, "reservedAfter": 1, "createdAt": "…" } ] }
 ```
+
+### health (unversioned)
+
+Health isn't part of the API contract, so it lives outside `/api/v1`, and versioning never moves it.
+
+| path | answers | checks | used by |
+|---|---|---|---|
+| `GET /healthz` | **liveness**: is the process up? | nothing external, always fast | Cloud Run liveness probe, Docker `HEALTHCHECK` |
+| `GET /readyz` | **readiness**: can it take traffic? | `SELECT 1` within 2 s; `503 / 1301` if not | Cloud Run startup and readiness probes |
+| `GET /api/health` | diagnostics | database latency and connection-pool stats | the operator console's status dot |
+
+- **No gateway secret on `/healthz` and `/readyz`,** so the platform can probe the container directly. They reveal nothing but "up" and "ready". `/api/health` goes through the gateway like everything else.
+- **Successful probes don't write log lines,** or they would bury everything else. A failing `/readyz` is logged.
+- **A new revision that can't reach Postgres never gets traffic,** so the previous one keeps serving.
 
 ### errors
 
@@ -411,7 +424,7 @@ The root `Dockerfile` is multi-stage on `node:24-alpine`, and plain enough to bu
 - `base`: pnpm pinned through Corepack. Manifests first, so installs are cached until the lockfile changes.
 - `build`: typecheck, then esbuild bundles the API with `@ois/shared` and `@ois/db` compiled in
 - `prod-deps`: frozen, offline, production-only install. Exactly the lockfile, nothing from the web app.
-- `runtime`: `tini` as PID 1, non-root `node` user, no package managers left behind, health check on `/api/v1/health`
+- `runtime`: `tini` as PID 1, non-root `node` user, no package managers left behind, Docker health check on `/healthz`
 
 Build context is the repo root, because the image needs the lockfile and the workspace packages.
 

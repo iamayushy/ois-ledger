@@ -201,6 +201,18 @@ export const HealthResponseSchema = Type.Object({
 });
 export type HealthResponse = Static<typeof HealthResponseSchema>;
 
+export const LivenessResponseSchema = Type.Object({
+  status: Type.Literal('ok'),
+  uptimeSeconds: Type.Integer(),
+});
+export type LivenessResponse = Static<typeof LivenessResponseSchema>;
+
+export const ReadinessResponseSchema = Type.Object({
+  status: Type.Literal('ready'),
+  database: Type.Literal('connected'),
+});
+export type ReadinessResponse = Static<typeof ReadinessResponseSchema>;
+
 export const StockShortageDtoSchema = Type.Object({
   sku: Type.String(),
   requested: Type.Integer(),

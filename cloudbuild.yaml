@@ -42,6 +42,9 @@ steps:
       - --max-instances=${_MAX_INSTANCES}
       - --cpu-boost
       - --concurrency=${_CONCURRENCY}
+      - --startup-probe=httpGet.path=/readyz,httpGet.port=3001,timeoutSeconds=3,periodSeconds=5,failureThreshold=12
+      - --readiness-probe=httpGet.path=/readyz,httpGet.port=3001,timeoutSeconds=3,periodSeconds=10,failureThreshold=3,successThreshold=1
+      - --liveness-probe=httpGet.path=/healthz,httpGet.port=3001,timeoutSeconds=2,periodSeconds=15,failureThreshold=3
       - --set-secrets=DATABASE_URL=${_DB_SECRET}:latest,PROXY_SHARED_SECRET=${_PROXY_SECRET}:latest
       - --set-env-vars=CORS_ORIGIN=${_CORS_ORIGIN},PG_POOL_MAX=${_PG_POOL_MAX},PG_POOL_MAX_WAITING=${_PG_POOL_MAX_WAITING},LOG_LEVEL=${_LOG_LEVEL}
 

@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import fp from 'fastify-plugin';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ERROR_CODE } from '@ois/shared/schemas';
+import { PROBE_PATHS } from '../routes/probes.js';
 
 export const PROXY_SECRET_HEADER = 'x-proxy-secret';
 
@@ -35,7 +36,7 @@ export const proxyAuthPlugin = fp<ProxyAuthPluginOptions>(
     const isTrustedProxy = createProxySecretVerifier(options.secret);
 
     fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
-      if (isTrustedProxy(readHeader(request))) {
+      if (PROBE_PATHS.has(request.routeOptions.url ?? '') || isTrustedProxy(readHeader(request))) {
         return;
       }
       await reply.code(401).send({

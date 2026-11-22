@@ -103,6 +103,9 @@ export const errorHandlerPlugin = fp(
 
     fastify.setErrorHandler((error: unknown, request: FastifyRequest, reply: FastifyReply) => {
       if (isAppError(error)) {
+        if (error.httpStatus === 503) {
+          reply.header('Retry-After', '1');
+        }
         reply.code(error.httpStatus).send(toErrorResponse(error));
         return;
       }

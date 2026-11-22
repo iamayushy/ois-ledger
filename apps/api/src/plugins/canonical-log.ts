@@ -8,6 +8,7 @@ import {
   type CanonicalValue,
   type RequestTelemetry,
 } from '../observability/telemetry.js';
+import { PROBE_PATHS } from '../routes/probes.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -104,6 +105,9 @@ export const canonicalLogPlugin = fp(
     });
 
     fastify.addHook('onResponse', async (request, reply) => {
+      if (PROBE_PATHS.has(request.routeOptions.url ?? '') && reply.statusCode < 500) {
+        return;
+      }
       emitCanonicalLine(request.log, request, reply);
     });
   },

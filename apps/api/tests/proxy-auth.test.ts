@@ -33,7 +33,7 @@ describe('Proxy shared-secret gate', () => {
   });
 
   it('rejects requests without the header with 401 (1005) and no body leakage', async () => {
-    const res = await gated.inject({ method: 'GET', url: '/api/v1/health' });
+    const res = await gated.inject({ method: 'GET', url: '/api/health' });
     expect(res.statusCode).toBe(401);
     expect(res.json<ErrorResponse>()).toEqual({
       error: { code: ERROR_CODE.UNAUTHORIZED_ORIGIN, message: 'Requests must arrive through the API gateway' },
@@ -59,14 +59,14 @@ describe('Proxy shared-secret gate', () => {
   it('accepts the correct secret', async () => {
     const res = await gated.inject({
       method: 'GET',
-      url: '/api/v1/health',
+      url: '/api/health',
       headers: { [PROXY_SECRET_HEADER]: SECRET },
     });
     expect(res.statusCode).toBe(200);
   });
 
   it('is disabled when no secret is configured', async () => {
-    const res = await open.inject({ method: 'GET', url: '/api/v1/health' });
+    const res = await open.inject({ method: 'GET', url: '/api/health' });
     expect(res.statusCode).toBe(200);
   });
 });
