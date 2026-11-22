@@ -301,6 +301,7 @@ Health isn't part of the API contract, so it lives outside `/api/v1`, and versio
 | `GET /readyz` | **readiness**: can it take traffic? | `SELECT 1` within 2 s; `503 / 1301` if not | Cloud Run startup and readiness probes |
 | `GET /api/health` | diagnostics | database latency and connection-pool stats | the operator console's status dot |
 
+- **`/healthz` is for in-container probes only.** Cloud Run's front end reserves some paths ending in `z`, `/healthz` included ([known issue](https://docs.cloud.google.com/run/docs/known-issues)), so from the internet it returns Google's 404. Cloud Run's own probes and Docker call the container directly, so they work. From outside, use `/readyz` or `/api/health`. Locally, `curl http://localhost:3001/healthz` works.
 - **No gateway secret on `/healthz` and `/readyz`,** so the platform can probe the container directly. They reveal nothing but "up" and "ready". `/api/health` goes through the gateway like everything else.
 - **Successful probes don't write log lines,** or they would bury everything else. A failing `/readyz` is logged.
 - **A new revision that can't reach Postgres never gets traffic,** so the previous one keeps serving.
